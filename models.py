@@ -7,8 +7,8 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
   assert value_dim % num_head == 0;
   key_dim = key_dim // num_head;
   value_dim = value_dim // num_head;
-  q_data = tf.keras.Input((None, None)); # q_data.shape = (batch, N_queries, q_channels)
-  m_data = tf.keras.Input((None, None)); # m_data.shape = (batch, N_keys, m_channels)
+  q_data = tf.keras.Input((None, key_dim)); # q_data.shape = (batch, N_queries, q_channels)
+  m_data = tf.keras.Input((None, key_dim)); # m_data.shape = (batch, N_keys, m_channels)
   bias = tf.keras.Input((None, None)); # bias.shape = (batch, N_queries, N_keys)
   if use_nonbatched_bias:
     nonbatched_bias = tf.keras.Input((None,)); # nonbatched_bias.shape = (N_queries, N_keys)
@@ -36,4 +36,12 @@ def MSARowAttentionWithPairBias():
   pair_act = tf.keras.Input((None, None)); # pair_act.shape = (N_res, N_res, c_z)
   msa_act_results = tf.keras.layers.LayerNormalization()(msa_act);
   pair_act_results = tf.keras.layers.LayerNormalization()(pair_act);
-  
+
+if __name__ == "__main__":
+  import numpy as np;
+  attention = Attention(100);
+  q_data = np.random.normal(size = (4, 20, 64));
+  m_data = np.random.normal(size = (4, 10, 64));
+  bias = np.random.normal(size = (4, 20, 10));
+  results = attention([q_data, m_data, bias]);
+  print(results.shape);
