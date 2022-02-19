@@ -6,8 +6,9 @@ import tensorflow as tf;
 def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbatched_bias = False):
   assert key_dim % num_head == 0;
   assert value_dim % num_head == 0;
+  assert key_dim == value_dim;
   q_data = tf.keras.Input((None, key_dim)); # q_data.shape = (batch, N_queries, q_channels)
-  m_data = tf.keras.Input((None, key_dim)); # m_data.shape = (batch, N_keys, m_channels)
+  m_data = tf.keras.Input((None, value_dim)); # m_data.shape = (batch, N_keys, m_channels)
   bias = tf.keras.Input((None, None, None)); # bias.shape = (batch, num_head, N_queries, N_keys)
   if use_nonbatched_bias:
     nonbatched_bias = tf.keras.Input((None, None), batch_size = num_head); # nonbatched_bias.shape = (num_head, N_queries, N_keys)
@@ -17,7 +18,7 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
   q = tf.keras.layers.Reshape((-1, num_head, key_dim))(q); # q.shape = (batch, N_queries, num_head, key_dim)
   k = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # k.shape = (batch, N_keys, num_head * key_dim)
   k = tf.keras.layers.Reshape((-1, num_head, key_dim))(k); # k.shape = (batch, N_keys, num_head, key_dim)
-  v = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # v.shape = (batch, N_keys, num_head * value_dim)
+  v = tf.keras.layers.Dense(num_head * value_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # v.shape = (batch, N_keys, num_head * value_dim)
   v = tf.keras.layers.Reshape((-1, num_head, value_dim))(v); # v.shape = (batch, N_keys, num_head, value_dim)
   logits = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(tf.transpose(x[0], (0, 2, 1, 3)) / tf.math.sqrt(tf.cast(tf.shape(x[0])[-1], dtype = tf.float32)), tf.transpose(x[1], (0, 2, 1, 3)), transpose_b = True) + x[2])([q, k, bias]); # logits.shape = (batch, num_head, N_queries, N_keys)
   if use_nonbatched_bias:
@@ -30,6 +31,16 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
   weighted_avg = tf.keras.layers.Reshape((-1, num_head * value_dim))(weighted_avg); # weighted_avg.shape = (batch, N_queries, num_head * value_dim)
   output = tf.keras.layers.Dense(output_dim, kernel_initializer = tf.keras.initializers.GlorotUniform())(weighted_avg); # output.shape = (batch, N_queries, output_dim)
   return tf.keras.Model(inputs = (q_data, m_data, bias, nonbatched_bias) if use_nonbatched_bias else (q_data, m_data, bias), outputs = output);
+
+def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
+  assert key_dim == value_dim;
+  assert key_dim % num_head == 0;
+  assert value_dim % num_head == 0;
+  q_data = tf.keras.Input((None, key_dim)); # q_data.shape = (batch, N_queries, q_channels)
+  m_data = tf.keras.Input((None, value_dim)); # m_data.shape = (batch, N_keys, m_channels)
+  q_mask = tf.keras.Input((None, key_dim)); # q_mask.shape = (batch, N_queries, q_channels)
+  bias = tf.keras.Input((None, None)); # bias.shape = (batch, num_head, N_keys)
+  
 
 def MSARowAttentionWithPairBias(c_m, c_z, key_dim = 64, num_head = 4, value_dim = 64):
   msa_act = tf.keras.Input((None, c_m)); # msa_act.shape = (N_seq, N_res, c_m)
