@@ -8,9 +8,9 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
   assert value_dim % num_head == 0;
   q_data = tf.keras.Input((None, key_dim)); # q_data.shape = (batch, N_queries, q_channels)
   m_data = tf.keras.Input((None, key_dim)); # m_data.shape = (batch, N_keys, m_channels)
-  bias = tf.keras.Input((num_head, None, None)); # bias.shape = (batch, num_head, N_queries, N_keys)
+  bias = tf.keras.Input((None, None, None)); # bias.shape = (batch, num_head, N_queries, N_keys)
   if use_nonbatched_bias:
-    nonbatched_bias = tf.keras.Input((None, None), batch = num_head); # nonbatched_bias.shape = (num_head, N_queries, N_keys)
+    nonbatched_bias = tf.keras.Input((None, None), batch_size = num_head); # nonbatched_bias.shape = (num_head, N_queries, N_keys)
   key_dim = key_dim // num_head;
   value_dim = value_dim // num_head;
   q = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(q_data); # q.shape = (batch, N_queries, num_head * key_dim);
@@ -47,7 +47,7 @@ if __name__ == "__main__":
   import numpy as np;
   q_data = np.random.normal(size = (4, 20, 64));
   m_data = np.random.normal(size = (4, 10, 64));
-  bias = np.random.normal(size = (4, 20, 10));
+  bias = np.random.normal(size = (4, 1, 1, 10));
   results = Attention(100)([q_data, m_data, bias]);
   print(results.shape);
   msa_act = np.random.normal(size = (4, 20, 64));
