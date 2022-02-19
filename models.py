@@ -29,7 +29,7 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
   gate_values = tf.keras.layers.Reshape((-1, num_head, value_dim))(gate_values); # gate_values.shape = (batch, N_queries, num_head, value_dim)
   weighted_avg = tf.keras.layers.Multiply()([weighted_avg, gate_values]); # weighted_avg.shape = (batch, N_queries, num_head, value_dim)
   weighted_avg = tf.keras.layers.Reshape((-1, num_head * value_dim))(weighted_avg); # weighted_avg.shape = (batch, N_queries, num_head * value_dim)
-  output = tf.keras.layers.Dense(output_dim, kernel_initializer = tf.keras.initializers.GlorotUniform())(weighted_avg); # output.shape = (batch, N_queries, output_dim)
+  output = tf.keras.layers.Dense(output_dim, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(weighted_avg); # output.shape = (batch, N_queries, output_dim)
   return tf.keras.Model(inputs = (q_data, m_data, bias, nonbatched_bias) if use_nonbatched_bias else (q_data, m_data, bias), outputs = output);  
 
 def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
