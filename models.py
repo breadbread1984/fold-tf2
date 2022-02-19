@@ -30,7 +30,7 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
   weighted_avg = tf.keras.layers.Multiply()([weighted_avg, gate_values]); # weighted_avg.shape = (batch, N_queries, num_head, value_dim)
   weighted_avg = tf.keras.layers.Reshape((-1, num_head * value_dim))(weighted_avg); # weighted_avg.shape = (batch, N_queries, num_head * value_dim)
   output = tf.keras.layers.Dense(output_dim, kernel_initializer = tf.keras.initializers.GlorotUniform())(weighted_avg); # output.shape = (batch, N_queries, output_dim)
-  return tf.keras.Model(inputs = (q_data, m_data, bias, nonbatched_bias) if use_nonbatched_bias else (q_data, m_data, bias), outputs = output);
+  return tf.keras.Model(inputs = (q_data, m_data, bias, nonbatched_bias) if use_nonbatched_bias else (q_data, m_data, bias), outputs = output);  
 
 def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
   assert key_dim == value_dim;
@@ -43,7 +43,19 @@ def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
   key_dim = key_dim // num_head;
   value_dim = value_dim // num_head;
   v = tf.keras.layers.Dense(value_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # v.shape = (batch, N_keys, value_dim)
-  q_avg = 
+  q_mask_broadcast = tf.keras.layers.Lambda(lambda x: tf.tile(x[0], [vsize / msize for msize, vsize zip(tf.shape(x[0]), tf.shape(x[1]))]))([q_mask, q_data]); # q_mask_broadcast.shape = (batch, N_queries, q_channels)
+  q_avg = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(x[0] * x[1], axis = 1) / (tf.math.reduce_sum(x[1], axis = 1) + 1e-10))([q_data, q_mask_broadcast]); # q_avg.shape = (batch, q_channels)
+  q = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(q_avg); # q.shape = (batch, num_head * key_dim)
+  q = tf.keras.layers.Reshape((-1, num_head, key_dim))(q); # q.shape = (batch, num_head, key_dim)
+  k = tf.keras.layers.Dense(key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # k.shape = (batch, N_keys, key_dim)
+  bias = tf.keras.layers.Lambda(lambda x: tf.expand(1e9 * (x - 1.), axis = 1)[:,:,:,0])(q_mask); # bias.shape = (batch, 1, N_queries)
+  logits = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0] / tf.math.sqrt(tf.cast(tf.shape(x[0])[-1], dtype = tf.float32)), tf.transpose(x[1], (0, 2, 1))) + x[2])([q,k,bias]); # logits.shape = (batch, num_head, N_keys)
+  weights = tf.keras.layers.Softmax()(logits); # weights.shape = (batch, num_head, N_keys)
+  weighted_avg = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([weights, v]); # weighted_avg.shape = (batch, num_head, value_dim)
+  gate_values = tf.keras.layers.Dense(num_head * value_dim, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(1.), activation = tf.keras.activations.sigmoid)(q_data); # gate_values.shape = (batch, N_queries, num_head * value_dim)
+  gate_values = tf.keras.layers.Reshape((-1, num_head, value_dim))(gate_values); # gate_values.shape = (batch, N_queries, num_head, value_dim)
+  weighted_avg = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0], axis = 1) * x[1])([weighted_avg, gate_values]); # weighted_avg.shape = (batch, N_queries, num_head, value_dim)
+  
 
 def MSARowAttentionWithPairBias(c_m, c_z, key_dim = 64, num_head = 4, value_dim = 64):
   msa_act = tf.keras.Input((None, c_m)); # msa_act.shape = (N_seq, N_res, c_m)
