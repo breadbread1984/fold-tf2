@@ -45,7 +45,7 @@ def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
   q_mask_broadcast = tf.keras.layers.Lambda(lambda x: tf.tile(x[0], tf.shape(x[1]) // tf.shape(x[0])))([q_mask, q_data]); # q_mask_broadcast.shape = (batch, N_queries, q_channels)
   q_avg = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(x[0] * x[1], axis = 1) / (tf.math.reduce_sum(x[1], axis = 1) + 1e-10))([q_data, q_mask_broadcast]); # q_avg.shape = (batch, q_channels)
   q = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(q_avg); # q.shape = (batch, num_head * key_dim)
-  q = tf.keras.layers.Reshape((-1, num_head, key_dim))(q); # q.shape = (batch, num_head, key_dim)
+  q = tf.keras.layers.Reshape((num_head, key_dim))(q); # q.shape = (batch, num_head, key_dim)
   k = tf.keras.layers.Dense(key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # k.shape = (batch, N_keys, key_dim)
   bias = tf.keras.layers.Lambda(lambda x: tf.expand_dims(1e9 * (x - 1.), axis = 1)[:,:,:,0])(q_mask); # bias.shape = (batch, 1, N_queries)
   logits = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0] / tf.math.sqrt(tf.cast(tf.shape(x[0])[-1], dtype = tf.float32)), tf.transpose(x[1], (0, 2, 1))) + x[2])([q,k,bias]); # logits.shape = (batch, num_head, N_queries)
@@ -80,8 +80,7 @@ if __name__ == "__main__":
   q_data = np.random.normal(size = (4, 20, 64));
   m_data = np.random.normal(size = (4, 10, 64));
   q_mask = np.random.randint(low = 0, high = 2, size = (4, 20, 64));
-  bias = np.random.normal(size = (4, 4, 10));
-  results = GlobalAttention(100)([q_data, m_data, q_mask, bias]);
+  results = GlobalAttention(100)([q_data, m_data, q_mask]);
   print(results.shape);
   msa_act = np.random.normal(size = (4, 20, 64));
   msa_mask = np.random.randint(low = 0, high = 1, size = (4, 20));
