@@ -52,6 +52,6 @@ if __name__ == "__main__":
   print(results.shape);
   msa_act = np.random.normal(size = (4, 20, 64));
   msa_mask = np.random.randint(low = 0, high = 1, size = (4, 20));
-  pair_act = np.random.normal(size = (4, 20, 32));
+  pair_act = np.random.normal(size = (20, 20, 32));
   results = MSARowAttentionWithPairBias(64, 32)([msa_act, msa_mask, pair_act]);
   print(results.shape);
