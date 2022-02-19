@@ -43,7 +43,7 @@ def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
   key_dim = key_dim // num_head;
   value_dim = value_dim // num_head;
   v = tf.keras.layers.Dense(value_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # v.shape = (batch, N_keys, value_dim)
-  q_mask_broadcast = tf.keras.layers.Lambda(lambda x: tf.tile(x[0], [vsize / msize for msize, vsize zip(tf.shape(x[0]), tf.shape(x[1]))]))([q_mask, q_data]); # q_mask_broadcast.shape = (batch, N_queries, q_channels)
+  q_mask_broadcast = tf.keras.layers.Lambda(lambda x: tf.tile(x[0], [vsize / msize for msize, vsize in zip(tf.shape(x[0]), tf.shape(x[1]))]))([q_mask, q_data]); # q_mask_broadcast.shape = (batch, N_queries, q_channels)
   q_avg = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(x[0] * x[1], axis = 1) / (tf.math.reduce_sum(x[1], axis = 1) + 1e-10))([q_data, q_mask_broadcast]); # q_avg.shape = (batch, q_channels)
   q = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(q_avg); # q.shape = (batch, num_head * key_dim)
   q = tf.keras.layers.Reshape((-1, num_head, key_dim))(q); # q.shape = (batch, num_head, key_dim)
