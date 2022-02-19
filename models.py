@@ -33,7 +33,7 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
   return tf.keras.Model(inputs = (q_data, m_data, bias, nonbatched_bias) if use_nonbatched_bias else (q_data, m_data, bias), outputs = output);  
 
 def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
-  # NOTE: multiple heads share a same value vectors (not respective value vectors as normal multi head attention does)
+  # NOTE: multiple heads share a same set of value vectors (not respective sets of value vectors as normal multi head attention does)
   assert key_dim == value_dim;
   assert key_dim % num_head == 0;
   assert value_dim % num_head == 0;
