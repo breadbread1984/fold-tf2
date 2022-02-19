@@ -78,7 +78,7 @@ if __name__ == "__main__":
   results = Attention(100)([q_data, m_data, bias]);
   print(results.shape);
   q_data = np.random.normal(size = (4, 20, 64));
-  m_data = np.random.normal(size = (4, 10, 64));
+  m_data = np.random.normal(size = (4, 20, 64));
   q_mask = np.random.randint(low = 0, high = 2, size = (4, 20, 64));
   results = GlobalAttention(100)([q_data, m_data, q_mask]);
   print(results.shape);
