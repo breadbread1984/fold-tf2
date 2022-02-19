@@ -40,7 +40,10 @@ def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
   m_data = tf.keras.Input((None, value_dim)); # m_data.shape = (batch, N_keys, m_channels)
   q_mask = tf.keras.Input((None, key_dim)); # q_mask.shape = (batch, N_queries, q_channels)
   bias = tf.keras.Input((None, None)); # bias.shape = (batch, num_head, N_keys)
-  
+  key_dim = key_dim // num_head;
+  value_dim = value_dim // num_head;
+  v = tf.keras.layers.Dense(value_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # v.shape = (batch, N_keys, value_dim)
+  q_avg = 
 
 def MSARowAttentionWithPairBias(c_m, c_z, key_dim = 64, num_head = 4, value_dim = 64):
   msa_act = tf.keras.Input((None, c_m)); # msa_act.shape = (N_seq, N_res, c_m)
