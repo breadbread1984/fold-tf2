@@ -76,13 +76,16 @@ def MSARowAttentionWithPairBias(c_m, c_z, key_dim = 64, num_head = 4, value_dim 
   msa_act_results = Attention(c_m, key_dim = key_dim, num_head = num_head, value_dim = value_dim, use_nonbatched_bias = True)([msa_act_results, msa_act_results, bias, nonbatched_bias]); # msa_act_results.shape = (N_seq, N_res, c_m)
   return tf.keras.Model(inputs = (msa_act, msa_mask, pair_act), outputs = msa_act_results);
 
-def MSAColumnAttention(c_m):
+def MSAColumnAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64):
   msa_act = tf.keras.Input((None, c_m)); # msa_act.shape = (N_seq, N_res, c_m)
   msa_mask = tf.keras.Input((None,)); # msa_mask.shape = (N_seq, N_res)
   msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act); # msa_act_results.shape = (N_res, N_seq, c_m)
   msa_mask_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(msa_mask); # msa_mask_reesults.shape = (N_res, N_seq)
-  bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(msa_mask_result); # bias.shape = (N_res, 1, 1, N_seq)
-  
+  bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(msa_mask_results); # bias.shape = (N_res, 1, 1, N_seq)
+  msa_act_results = tf.keras.layers.LayerNormalization()(msa_act_results); # msa_act_results.shape = (N_res, N_seq, c_m)
+  msa_act_results = Attention(c_m, key_dim = key_dim, num_head = num_head, value_dim = value_dim, use_nonbatched_bias = False)([msa_act_results, msa_act_results, bias]); # msa_act_results.shape = (N_res, N_seq, c_m)
+  msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act_results); # msa_act_results.shape = (N_seq, N_res, c_m)
+  return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results);
 
 if __name__ == "__main__":
   import numpy as np;
@@ -100,4 +103,6 @@ if __name__ == "__main__":
   msa_mask = np.random.randint(low = 0, high = 1, size = (4, 20));
   pair_act = np.random.normal(size = (20, 20, 32));
   results = MSARowAttentionWithPairBias(64, 32)([msa_act, msa_mask, pair_act]);
+  print(results.shape);
+  results = MSAColumnAttention(64)([msa_act, msa_mask]);
   print(results.shape);
