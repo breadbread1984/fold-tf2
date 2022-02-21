@@ -110,7 +110,7 @@ def TriangleAttention(c_z, key_dim = 64, num_head = 4, value_dim = 64, orientati
   else:
     pair_act_results = pair_act;
     pair_mask_results = pair_mask;
-  bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.)), (tf.shape(x)[0], 1, 1, tf.shape(x)[1]))(pair_mask); # bias.shape = (N_seq, 1, 1, N_res) if per_row else (N_res, 1, 1, N_seq)
+  bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(pair_mask); # bias.shape = (N_seq, 1, 1, N_res) if per_row else (N_res, 1, 1, N_seq)
   pair_act_results = tf.keras.layers.LayerNormalization()(pair_act_results); # pair_act_results.shape = (N_res, N_res, c_z)
   nonbatched_bias = tf.keras.layers.Dense(num_head, use_bias = False, kernel_initializer = tf.keras.initializers.RandomNormal(stddev = 1./np.sqrt(c_z)))(pair_act_results); # nonbatched_bias.shape = (N_res, N_res, num_head)
   nonbatched_bias = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2, 0, 1)))(nonbatched_bias); # nonbatched_bias.shape = (num_head, N_res, N_res)
@@ -132,11 +132,15 @@ if __name__ == "__main__":
   results = GlobalAttention(100)([q_data, m_data, q_mask]);
   print(results.shape);
   msa_act = np.random.normal(size = (4, 20, 64));
-  msa_mask = np.random.randint(low = 0, high = 1, size = (4, 20));
+  msa_mask = np.random.randint(low = 0, high = 2, size = (4, 20));
   pair_act = np.random.normal(size = (20, 20, 32));
   results = MSARowAttentionWithPairBias(64, 32)([msa_act, msa_mask, pair_act]);
   print(results.shape);
   results = MSAColumnAttention(64)([msa_act, msa_mask]);
   print(results.shape);
   results = MSAColumnGlobalAttention(64)([msa_act, msa_mask]);
+  print(results.shape);
+  pair_act = np.random.normal(size = (20, 20, 64));
+  pair_mask = np.random.randint(low = 0, high = 2, size = (20, 20));
+  results = TriangleAttention(64)([pair_act, pair_mask]);
   print(results.shape);
