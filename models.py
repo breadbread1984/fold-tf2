@@ -118,3 +118,5 @@ if __name__ == "__main__":
   print(results.shape);
   results = MSAColumnAttention(64)([msa_act, msa_mask]);
   print(results.shape);
+  results = MSAColumnGlobalAttention(64)([msa_act, msa_mask]);
+  print(results.shape);
