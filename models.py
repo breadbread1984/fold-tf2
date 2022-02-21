@@ -3,12 +3,29 @@
 import numpy as np;
 import tensorflow as tf;
 
-def TemplatePairStack(c_t):
+def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_block = 2, rate = 0.25):
   pair_act = tf.keras.Input((None, c_t)); # pair_act.shape = (N_res, N_res, c_t)
   pair_mask = tf.keras.Input((None, )); # pair_mask.shape = (N_res, N_res)
-  
+  pair_act_results = pair_act;
+  pair_mask_results = pair_mask;
+  for i in range(num_block):
+    # triangle_attention_starting_node
+    skip = pair_act_results;
+    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
+    residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # pair_act_results.shape = (N_res, N_res, c_t)
+    pair_act_results = tf.keras.layers.Add()([skip, residual]);
+    # triangle_attention_ending_node
+    skip = pair_act_results;
+    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
+    residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])))(residual); # pair_act_results.shape = (N_res, N_res, c_t)
+    pair_act_results = tf.keras.layers.Add()([skip, residual]);
+    # triangle_multiplication_outgoing
+    # TODO:
 
 def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbatched_bias = False):
+  # NOTE: multi head attention.
+  # NOTE: differences:
+  # 1) qk + bias + tf.expand_dims(nonbatched_bias, axis = 0), ordinary attention only calculate qk.
   assert key_dim % num_head == 0;
   assert value_dim % num_head == 0;
   assert key_dim == value_dim;
@@ -39,6 +56,8 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
 
 def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
   # NOTE: multiple heads share a same set of value vectors (not respective sets of value vectors as normal multi head attention does)
+  # NOTE: differences:
+  # 1) 
   assert key_dim == value_dim;
   assert key_dim % num_head == 0;
   assert value_dim % num_head == 0;
@@ -118,6 +137,10 @@ def TriangleAttention(c_z, key_dim = 64, num_head = 4, value_dim = 64, orientati
   if orientation == 'per_column':
     pair_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(pair_act_results); # pair_act_results.shape = (N_res, N_res, c_z)
   return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results);
+
+def MaskedMsaHead(c_m):
+  msa = tf.keras.Input((None, c_m)); # msa.shape = (N_seq, N_seq, c_m)
+  
 
 if __name__ == "__main__":
   import numpy as np;
