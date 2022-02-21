@@ -23,7 +23,7 @@ def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_block
     # TODO:
 
 def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbatched_bias = False):
-  # NOTE: multi head attention.
+  # NOTE: multi head attention: q_data is query, m_data is key, m_data is value
   # NOTE: differences:
   # 1) qk + bias + tf.expand_dims(nonbatched_bias, axis = 0), ordinary attention only calculate qk.
   assert key_dim % num_head == 0;
@@ -55,16 +55,18 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
   return tf.keras.Model(inputs = (q_data, m_data, bias, nonbatched_bias) if use_nonbatched_bias else (q_data, m_data, bias), outputs = output);  
 
 def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
-  # NOTE: multiple heads share a same set of value vectors (not respective sets of value vectors as normal multi head attention does)
+  # NOTE: multiple heads share a same set of value vectors: query is q_data, key is m_data, value is m_data
   # NOTE: differences:
-  # 1) 
+  # 1) use an extra mask to get weighted average of query along N_queries dimension, whose shape is reduce to batch x q_channels.
+  # 2) query's shape is batch x head_num x key_dim, key's shape is batch x head_num x seq_len x key_dim, therefore, qk's shape is batch x head_num x seq_len.
+  # 3) value's shape is batch x seq_len x value_dim, multiple head share a same set of value vectors
+  # 4) qk + bias, ordinary attention only calculate qk.
   assert key_dim == value_dim;
   assert key_dim % num_head == 0;
   assert value_dim % num_head == 0;
   q_data = tf.keras.Input((None, key_dim)); # q_data.shape = (batch, N_queries, q_channels)
   m_data = tf.keras.Input((None, value_dim)); # m_data.shape = (batch, N_keys, m_channels)
-  q_mask = tf.keras.Input((None, key_dim)); # q_mask.shape = (batch, N_queries, q_channels)
-  bias = tf.keras.Input((None, None, None)); # bias.shape = (batch, num_head, N_queries, N_keys)
+  q_mask = tf.keras.Input((None, key_dim)); # q_mask.shape = (batch, N_queries, q_channels or 1)
   key_dim = key_dim // num_head;
   value_dim = value_dim // num_head;
   v = tf.keras.layers.Dense(value_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # v.shape = (batch, N_keys, value_dim)
