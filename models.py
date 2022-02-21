@@ -45,6 +45,7 @@ def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
   q_data = tf.keras.Input((None, key_dim)); # q_data.shape = (batch, N_queries, q_channels)
   m_data = tf.keras.Input((None, value_dim)); # m_data.shape = (batch, N_keys, m_channels)
   q_mask = tf.keras.Input((None, key_dim)); # q_mask.shape = (batch, N_queries, q_channels)
+  bias = tf.keras.Input((None, None, None)); # bias.shape = (batch, num_head, N_queries, N_keys)
   key_dim = key_dim // num_head;
   value_dim = value_dim // num_head;
   v = tf.keras.layers.Dense(value_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # v.shape = (batch, N_keys, value_dim)
@@ -99,6 +100,24 @@ def MSAColumnGlobalAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64):
   msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act_results); # msa_act_results.shape = (N_seq, N_res, c_m)
   return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results);
 
+def TriangleAttention(c_z, key_dim = 64, num_head = 4, value_dim = 64, orientation = 'per_column'):
+  assert orientation in ['per_column', 'per_row'];
+  pair_act = tf.keras.Input((None, c_z)); # pair_act.shape = (N_res, N_res, c_z)
+  pair_mask = tf.keras.Input((None,)); # pair_mask.shape = (N_res, N_res)
+  if orientation == 'per_column':
+    pair_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(pair_act); # pair_act_results.shape = (N_res, N_res, c_z)
+    pair_mask_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(pair_mask); # pair_mask_results.shape = (N_res, N_res)
+  else:
+    pair_act_results = pair_act;
+    pair_mask_results = pair_mask;
+  bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.)), (tf.shape(x)[0], 1, 1, tf.shape(x)[1]))(pair_mask); # bias.shape = (N_seq, 1, 1, N_res) if per_row else (N_res, 1, 1, N_seq)
+  pair_act_results = tf.keras.layers.LayerNormalization()(pair_act_results); # pair_act_results.shape = (N_res, N_res, c_z)
+  nonbatched_bias = tf.keras.layers.Dense(num_head, use_bias = False, kernel_initializer = tf.keras.initializers.RandomNormal(stddev = 1./np.sqrt(c_z)))(pair_act_results); # nonbatched_bias.shape = (N_res, N_res, num_head)
+  nonbatched_bias = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2, 0, 1)))(nonbatched_bias); # nonbatched_bias.shape = (num_head, N_res, N_res)
+  pair_act_results = Attention(c_z, key_dim = key_dim, num_head = num_head, value_dim = value_dim, use_nonbatched_bias = True)([pair_act_results, pair_act_results, bias, nonbatched_bias]); # pair_act_results.shape = (N_res, N_res, c_z)
+  if orientation == 'per_column':
+    pair_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(pair_act_results); # pair_act_results.shape = (N_res, N_res, c_z)
+  return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results);
 
 if __name__ == "__main__":
   import numpy as np;
