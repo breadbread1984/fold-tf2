@@ -159,21 +159,35 @@ def TriangleAttention(c_z, key_dim = 64, num_head = 4, value_dim = 64, orientati
     pair_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(pair_act_results); # pair_act_results.shape = (N_res, N_res, c_z)
   return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results);
 
-def TriangleMultiplication(c_z, intermediate_channel = 64):
+def TriangleMultiplication(c_z, intermediate_channel = 64, mode = 'outgoing'):
+  assert mode in ['outgoing', 'incoming'];
   act = tf.keras.Input((None, c_z)); # act.shape = (N_res, N_res, c_z)
   mask = tf.keras.Input((None,)); # mask.shape = (N_res, N_res)
   mask_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(mask); # mask_results.shape = (N_res, N_res, 1)
   act_results = tf.keras.layers.LayerNormalization()(act); # act_results.shape = (N_res, N_res, c_z)
   input_act = act_results;
   # left projection
-  left_projection = tf.keras.layers.Dense(intermediate_channel, kernel_initializer = tf.keras.initializers.TruncatedNormal())(act_results); # left_projection.shape = (N_res, N_res, intermediate_channel)
-  left_projection = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask_results, left_projection]); # left_projection.shape = (N_res, N_res, intermediate_channel)
+  left_projection = tf.keras.layers.Dense(intermediate_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act_results); # left_projection.shape = (N_res, N_res, intermediate_channel)
+  left_proj_act = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask_results, left_projection]); # left_proj_act.shape = (N_res, N_res, intermediate_channel)
   # right projection
-  right_projection = tf.keras.layers.Dense(intermediate_channel, kernel_initializer = tf.keras.initializers.TruncatedNormal())(act_results); # right_projection.shape = (N_res, N_res, intermediate_channel)
-  right_projection = tf.keras.layres.Lambda(lambda x: x[0] * x[1])([mask_results, right_projection]); # right_projection.shape = (N_res, N_res, intermediate_channel)
+  right_projection = tf.keras.layers.Dense(intermediate_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act_results); # right_projection.shape = (N_res, N_res, intermediate_channel)
+  right_proj_act = tf.keras.layres.Lambda(lambda x: x[0] * x[1])([mask_results, right_projection]); # right_proj_act.shape = (N_res, N_res, intermediate_channel)
   # left gate
-  left_gate_values = 
-  # lambda x: tf.transpose(tf.linalg.matmul(tf.transpose(x, (2,0,1)), tf.transpose(x, (2,0,1)), transpose_b = True), (1,2,0))
+  left_gate_values = tf.keras.layers.Dense(intermediate_channel, activation = tf.keras.activations.sigmoid, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Constant(1.))(act_results); # left_gate_values.shape = (N_res, N_res, intermediate_channel)
+  right_gate_values = tf.keras.layers.Dense(intermediate_channel, activation = tf.keras.activations.sigmoid, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Constant(1.))(act_results); # right_gate_values.shape = (N_res, N_res, intermediate_channel)
+  # gate projection
+  left_proj_act = tf.keras.layers.Multiply()([left_proj_act, left_gate_values]); # left_proj_act.shape = (N_res, N_res, intermediate_channel)
+  right_proj_act = tf.keras.layers.Multiply()([right_proj_act, right_gate_values]); # right_proj_act.shape = (N_res, N_res, intermediate_channel)
+  # apply equation
+  if mode == 'outgoing':
+    act = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.linalg.matmul(tf.transpose(x[0], (2,0,1)), tf.transpose(x[1], (2,0,1)), transpose_b = True), (1,2,0)))([left_proj_act, right_proj_act]); # act.shape = (N_res, N_res, intermediate_channel)
+  else:
+    act = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.linalg.matmul(tf.transpose(x[0], (2,1,0)), tf.transpose(x[1], (2,1,0)), transpose_b = True), (2,1,0)))([left_proj_act, right_proj_act]); # act.shape = (N_res, N_res, intermediate_channel)
+  act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_res, N_res, intermediate_channel)
+  act = tf.keras.layers.Dense(c_z, kernel_initializer = tf.keras.initializers.Zeros())(act); # act.shape = (N_res, N_res, c_z)
+  gate_values = tf.keras.layers.Dense(c_z, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Constant(1.))(input_act);
+  act = tf.keras.layers.Multiply()([act, gate_values]); # act.shape = (N_res, N_res, c_z)
+  return tf.keras.Model(inputs = (act, mask), outputs = act);
 
 def MaskedMsaHead(c_m):
   msa = tf.keras.Input((None, c_m)); # msa.shape = (N_seq, N_seq, c_m)
@@ -203,4 +217,8 @@ if __name__ == "__main__":
   pair_act = np.random.normal(size = (20, 20, 64));
   pair_mask = np.random.randint(low = 0, high = 2, size = (20, 20));
   results = TriangleAttention(64)([pair_act, pair_mask]);
+  print(results.shape);
+  results = TriangleMultiplication(64, mode = 'outgoing')([pair_act, pair_mask]);
+  print(results.shape);
+  results = TriangleMultiplication(64, mode = 'incoming')([pair_act, pair_mask]);
   print(results.shape);
