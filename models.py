@@ -235,16 +235,23 @@ def DistogramHead(c_z, num_bins = 64, first_break = 2.3125, last_break = 21.6875
   breaks = tf.keras.layers.Lambda(lambda x, f, l, n: tf.linspace(f, l, n - 1), arguments = {'f': first_break, 'l': last_break, 'n': num_bins})(pair);
   return tf.keras.Model(inputs = pair, outputs = (logits, breaks));
 
-def OuterProductMean(c_m, num_outer_channel = 32):
+def OuterProductMean(num_output_channel, c_m, num_outer_channel = 32):
   act = tf.keras.Input((None, c_m)); # act.shape = (N_seq, N_res, c_m)
   mask = tf.keras.Input((None,)); # mask.shape = (N_seq, N_res)
   mask_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(mask); # mask_results.shape = (N_seq, N_res, 1)
-  act_results = tf.keras.layers.LayerNormal()(act); # act_results.shape = (N_seq, N_res, c_m)
+  act_results = tf.keras.layers.LayerNormalization()(act); # act_results.shape = (N_seq, N_res, c_m)
   left_act_results = tf.keras.layers.Dense(num_outer_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act_results); # left_act_results.shape = (N_seq, N_res, num_outer_channel)
-  left_act_results = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask, left_act_results]); # left_act_results.shape = (N_seq, N_res, num_outer_channel)
+  left_act_results = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask_results, left_act_results]); # left_act_results.shape = (N_seq, N_res, num_outer_channel)
   right_act_results = tf.keras.layers.Dense(num_outer_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act_results); # right_act_results.shape = (N_seq, N_res, num_outer_channel)
-  right_act_results = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask, right_act_results]); # right_act_results.shape = (N_seq, N_res, num_outer_channel)
-  
+  right_act_results = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask_results, right_act_results]); # right_act_results.shape = (N_seq, N_res, num_outer_channel)
+  left_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0, 2, 1))); # left_act_results.shape = (N_seq, num_outer_channel, N_res)
+  act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.reshape(tf.linalg.matmul(tf.reshape(x[0], (tf.shape(x[0])[0], -1)), tf.reshape(x[1], (tf.shape(x[1])[0], -1)), transpose_a = True), (tf.shape(x[0])[1], tf.shape(x[0])[2], tf.shape(x[1])[1], tf.shape(x[1])[2])), (2,1,0,3)))([left_act_results, right_act_results]); # act_results.shape = (N_res, N_res, num_outer_channel, num_outer_channel)
+  act_results_reshape = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (tf.shape(x)[0] * tf.shape(x)[1], -1)))(act_results); # act_results.shape = (N_res, N_res, num_outer_channel**2)
+  act_results = tf.keras.layers.Dense(num_output_channel, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Zeros())(act_results_reshape); # act_results.shape = (N_res, N_res, num_output_channel)
+  act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(act_results); # act_results.shape = (N_res, N_res, num_output_channel)
+  norm = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.linalg.matmul(tf.transpose(x, (2,1,0)), tf.transpose(x,(2,1,0)), transpose_b = True), (1,2,0)))(mask_results); # norm.shape = (N_res, N_res, 1)
+  act_results = tf.keras.layers.Lambda(lambda x: x[0] / (x[1] + 1e-3))([act_results, norm]); # act_results.shape = (N_res, N_res, num_output_channel)
+  return tf.keras.Model(inputs = (act, mask), outputs = act_results);
 
 if __name__ == "__main__":
   import numpy as np;
@@ -278,4 +285,6 @@ if __name__ == "__main__":
   results = TemplatePairStack(64)([pair_act, pair_mask]);
   print(results.shape);
   results = Transition(64)([pair_act, pair_mask]);
+  print(results.shape);
+  results = OuterProductMean(64, 64)([pair_act, pair_mask]);
   print(results.shape);
