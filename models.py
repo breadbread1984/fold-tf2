@@ -253,6 +253,13 @@ def OuterProductMean(num_output_channel, c_m, num_outer_channel = 32):
   act_results = tf.keras.layers.Lambda(lambda x: x[0] / (x[1] + 1e-3))([act_results, norm]); # act_results.shape = (N_res, N_res, num_output_channel)
   return tf.keras.Model(inputs = (act, mask), outputs = act_results);
 
+def dgram_from_positions(min_bin, max_bin, num_bins = 39):
+  positions = tf.keras.Input((3,)); # positions.shape = (N_res, 3)
+  lower_breaks = tf.keras.layers.Lambda(lambda x,l,u,n: tf.linspace(l,u,n), arguments = {'l','u','n'})(positions); # lower_breaks.shape = (num_bins)
+  lower_breaks = tf.keras.layers.Lambda(lambda x: tf.math.square(x))(lower_breaks); # lower_breaks.shape = (num_bins,)
+  upper_breaks = tf.keras.layers.Lambda(lambda x: tf.concat([x[1:], [1e8]], axis = -1))(lower_breaks); # upper_breaks.shape = (num_bins,)
+  
+
 if __name__ == "__main__":
   import numpy as np;
   q_data = np.random.normal(size = (4, 20, 64));
