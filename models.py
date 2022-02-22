@@ -255,10 +255,15 @@ def OuterProductMean(num_output_channel, c_m, num_outer_channel = 32):
 
 def dgram_from_positions(min_bin, max_bin, num_bins = 39):
   positions = tf.keras.Input((3,)); # positions.shape = (N_res, 3)
-  lower_breaks = tf.keras.layers.Lambda(lambda x,l,u,n: tf.linspace(l,u,n), arguments = {'l','u','n'})(positions); # lower_breaks.shape = (num_bins)
+  lower_breaks = tf.keras.layers.Lambda(lambda x,l,u,n: tf.linspace(l,u,n), arguments = {'l': min_bin,'u': max_bin, 'n': num_bins})(positions); # lower_breaks.shape = (num_bins)
   lower_breaks = tf.keras.layers.Lambda(lambda x: tf.math.square(x))(lower_breaks); # lower_breaks.shape = (num_bins,)
   upper_breaks = tf.keras.layers.Lambda(lambda x: tf.concat([x[1:], [1e8]], axis = -1))(lower_breaks); # upper_breaks.shape = (num_bins,)
-  
+  dist2 = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.math.square(tf.expand_dims(x, axis = -2) - tf.expand_dims(x, axis = -3)), axis = -1, keepdims = True))(positions); # dist2.shape = (N_res, N_res, 1)
+  dgram = tf.keras.layers.Lambda(lambda x: tf.cast(x[0] > x[1], dtype = tf.float32) * tf.cast(x[0] < x[2], dtype = tf.float32))([dist2, lower_breaks, upper_breaks]); # dgram.shape = (N_res, N_res, num_bins)
+  return tf.keras.Model(inputs = positions, outputs = dgram);
+
+def pseudo_beta_fn():
+  pass;
 
 if __name__ == "__main__":
   import numpy as np;
@@ -294,4 +299,7 @@ if __name__ == "__main__":
   results = Transition(64)([pair_act, pair_mask]);
   print(results.shape);
   results = OuterProductMean(64, 64)([pair_act, pair_mask]);
+  print(results.shape);
+  positions = np.random.normal(size = (10,3));
+  results = dgram_from_positions(3.25, 50.75)(positions);
   print(results.shape);
