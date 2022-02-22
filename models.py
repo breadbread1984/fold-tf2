@@ -14,22 +14,22 @@ def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_inter
   for i in range(num_block):
     # triangle_attention_starting_node
     skip = pair_act_results;
-    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_row', name = 'triangle_attention_starting_node')([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
+    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_row', name = 'block%d/triangle_attention_starting_node' % i)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # pair_act_results.shape = (N_res, N_res, c_t)
     pair_act_results = tf.keras.layers.Add()([skip, residual]);
     # triangle_attention_ending_node
     skip = pair_act_results;
-    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_column', name = 'triangle_attention_ending_node')([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
+    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_column', name = 'block%d/triangle_attention_ending_node' % i)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])))(residual); # pair_act_results.shape = (N_res, N_res, c_t)
     pair_act_results = tf.keras.layers.Add()([skip, residual]);
     # triangle_multiplication_outgoing
     skip = pair_act_results;
-    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'outgoing', name = 'triangle_multiplication_outgoing')([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_t)
+    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'outgoing', name = 'block%d/triangle_multiplication_outgoing' % i)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_t)
     pair_act_results = tf.keras.layers.Add()([skip, residual]);
     # triangle_multiplication_incoming
     skip = pair_act_results;
-    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'incoming', name = 'triangle_multiplication_incoming')([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, act)
+    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'incoming', name = 'block%d/triangle_multiplication_incoming' % i)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, act)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_t)
     pair_act_results = tf.keras.layers.Add()([skip, residual]);
   return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results, **kwargs);
