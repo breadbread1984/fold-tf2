@@ -6,7 +6,7 @@ import tensorflow as tf;
 def get_initializer_stddev(input_shape):
   scale = 1 / np.prod(input_shape)
 
-def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_block = 2, rate = 0.25):
+def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_intermediate_channel = 64, num_block = 2, rate = 0.25, **kwargs):
   pair_act = tf.keras.Input((None, c_t)); # pair_act.shape = (N_res, N_res, c_t)
   pair_mask = tf.keras.Input((None, )); # pair_mask.shape = (N_res, N_res)
   pair_act_results = pair_act;
@@ -14,18 +14,27 @@ def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_block
   for i in range(num_block):
     # triangle_attention_starting_node
     skip = pair_act_results;
-    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_row')([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
+    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_row', name = 'triangle_attention_starting_node')([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # pair_act_results.shape = (N_res, N_res, c_t)
     pair_act_results = tf.keras.layers.Add()([skip, residual]);
     # triangle_attention_ending_node
     skip = pair_act_results;
-    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_column')([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
+    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_column', name = 'triangle_attention_ending_node')([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])))(residual); # pair_act_results.shape = (N_res, N_res, c_t)
     pair_act_results = tf.keras.layers.Add()([skip, residual]);
     # triangle_multiplication_outgoing
-    # TODO:
+    skip = pair_act_results;
+    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'outgoing', name = 'triangle_multiplication_outgoing')(pair_act_results); # residual.shape = (N_res, N_res, c_t)
+    residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_t)
+    pair_act_results = tf.keras.layers.Add()([skip, residual]);
+    # triangle_multiplication_incoming
+    skip = pair_act_results;
+    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'incoming', name = 'triangle_multiplication_incoming')(pair_act_results); # residual.shape = (N_res, N_res, act)
+    residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_t)
+    pair_act_results = tf.keras.layers.Add()([skip, residual]);
+  return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results, **kwargs);
 
-def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbatched_bias = False):
+def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbatched_bias = False, **kwargs):
   # NOTE: multi head attention: q_data is query, m_data is key, m_data is value
   # NOTE: differences:
   # 1) qk + bias + tf.expand_dims(nonbatched_bias, axis = 0), ordinary attention only calculate qk.
@@ -56,9 +65,9 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
   weighted_avg = tf.keras.layers.Multiply()([weighted_avg, gate_values]); # weighted_avg.shape = (batch, N_queries, num_head, value_dim)
   weighted_avg = tf.keras.layers.Reshape((-1, num_head * value_dim))(weighted_avg); # weighted_avg.shape = (batch, N_queries, num_head * value_dim)
   output = tf.keras.layers.Dense(output_dim, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(weighted_avg); # output.shape = (batch, N_queries, output_dim)
-  return tf.keras.Model(inputs = (q_data, m_data, bias, nonbatched_bias) if use_nonbatched_bias else (q_data, m_data, bias), outputs = output);  
+  return tf.keras.Model(inputs = (q_data, m_data, bias, nonbatched_bias, **kwargs) if use_nonbatched_bias else (q_data, m_data, bias), outputs = output, **kwargs);  
 
-def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
+def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, **kwargs):
   # NOTE: multi head attention sharing a same set of value vectors among different heads: query is q_data, key is m_data, value is m_data
   # NOTE: differences:
   # 1) use an extra mask to get weighted average of query along N_queries dimension, whose shape is reduce to batch x q_channels.
@@ -89,9 +98,9 @@ def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64):
   weighted_avg = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0], axis = 1) * x[1])([weighted_avg, gate_values]); # weighted_avg.shape = (batch, N_queries, num_head, value_dim)
   weighted_avg = tf.keras.layers.Reshape((-1, num_head * value_dim))(weighted_avg); # weighted_avg.shape = (batch, N_queries, num_head * value_dim)
   output = tf.keras.layers.Dense(output_dim, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(weighted_avg); # output.shape = (batch, N_queries, output_dim)
-  return tf.keras.Model(inputs = (q_data, m_data, q_mask), outputs = output);
+  return tf.keras.Model(inputs = (q_data, m_data, q_mask), outputs = output, **kwargs);
 
-def MSARowAttentionWithPairBias(c_m, c_z, key_dim = 64, num_head = 4, value_dim = 64):
+def MSARowAttentionWithPairBias(c_m, c_z, key_dim = 64, num_head = 4, value_dim = 64, **kwargs):
   # NOTE: multi head self attention: query is msa_act, key is msa_act, value is msa_act.
   # NOTE: differences
   # 1) use msa_mask to control bias, bias's shape is N_seq(batch) x num_head(1) x N_queries(1) x N_res.
@@ -105,9 +114,9 @@ def MSARowAttentionWithPairBias(c_m, c_z, key_dim = 64, num_head = 4, value_dim 
   nonbatched_bias = tf.keras.layers.Dense(num_head, use_bias = False, kernel_initializer = tf.keras.initializers.RandomNormal(stddev = 1./np.sqrt(c_z)))(pair_act_results); # nonbatched_bias.shape = (N_res. N_res, num_head)
   nonbatched_bias = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2, 0, 1)))(nonbatched_bias); # nonbatched_bias.shape = (num_head, N_res, N_res)
   msa_act_results = Attention(c_m, key_dim = key_dim, num_head = num_head, value_dim = value_dim, use_nonbatched_bias = True)([msa_act_results, msa_act_results, bias, nonbatched_bias]); # msa_act_results.shape = (N_seq, N_res, c_m)
-  return tf.keras.Model(inputs = (msa_act, msa_mask, pair_act), outputs = msa_act_results);
+  return tf.keras.Model(inputs = (msa_act, msa_mask, pair_act), outputs = msa_act_results, **kwargs);
 
-def MSAColumnAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64):
+def MSAColumnAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64, **kwargs):
   # NOTE: multi head self attention: query is msa_act.T, key is msa_act.T, value is msa_act.T.
   # NOTE: differences
   # 1) use msa_mask to control bias, bias's shape is N_res(batch) x num_head(1) x N_queries(1) x N_seq.
@@ -119,9 +128,9 @@ def MSAColumnAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64):
   msa_act_results = tf.keras.layers.LayerNormalization()(msa_act_results); # msa_act_results.shape = (N_res, N_seq, c_m)
   msa_act_results = Attention(c_m, key_dim = key_dim, num_head = num_head, value_dim = value_dim, use_nonbatched_bias = False)([msa_act_results, msa_act_results, bias]); # msa_act_results.shape = (N_res, N_seq, c_m)
   msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act_results); # msa_act_results.shape = (N_seq, N_res, c_m)
-  return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results);
+  return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results, **kwargs);
 
-def MSAColumnGlobalAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64):
+def MSAColumnGlobalAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64, **kwargs):
   # NOTE: multi head self attention: query is msa_act.T, key is msa_act.T, value is msa_act.T.
   # NOTE: differences
   # 1) use msa_mask to control q_mask which controls bias in global attention.
@@ -134,9 +143,9 @@ def MSAColumnGlobalAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64):
   msa_mask_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(msa_mask_results); # msa_mask_results.shape = (N_res, N_seq, 1)
   msa_act_results = GlobalAttention(c_m, key_dim = key_dim, num_head = num_head, value_dim = value_dim)([msa_act_results, msa_act_results, msa_mask_results]); # msa_act_results.shape = (N_res, N_seq, c_m)
   msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act_results); # msa_act_results.shape = (N_seq, N_res, c_m)
-  return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results);
+  return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results, **kwargs);
 
-def TriangleAttention(c_z, key_dim = 64, num_head = 4, value_dim = 64, orientation = 'per_column'):
+def TriangleAttention(c_z, key_dim = 64, num_head = 4, value_dim = 64, orientation = 'per_column', **kwargs):
   # NOTE: multi head self attention: query is pair_act, key is pair_act, value is pair_act.
   # NOTE: difference:
   # 1) use pair_mask to control bias.
@@ -157,9 +166,9 @@ def TriangleAttention(c_z, key_dim = 64, num_head = 4, value_dim = 64, orientati
   pair_act_results = Attention(c_z, key_dim = key_dim, num_head = num_head, value_dim = value_dim, use_nonbatched_bias = True)([pair_act_results, pair_act_results, bias, nonbatched_bias]); # pair_act_results.shape = (N_res, N_res, c_z)
   if orientation == 'per_column':
     pair_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(pair_act_results); # pair_act_results.shape = (N_res, N_res, c_z)
-  return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results);
+  return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results, **kwargs);
 
-def TriangleMultiplication(c_z, intermediate_channel = 64, mode = 'outgoing'):
+def TriangleMultiplication(c_z, intermediate_channel = 64, mode = 'outgoing', **kwargs):
   assert mode in ['outgoing', 'incoming'];
   act = tf.keras.Input((None, c_z)); # act.shape = (N_res, N_res, c_z)
   mask = tf.keras.Input((None,)); # mask.shape = (N_res, N_res)
@@ -187,7 +196,7 @@ def TriangleMultiplication(c_z, intermediate_channel = 64, mode = 'outgoing'):
   act_results = tf.keras.layers.Dense(c_z, kernel_initializer = tf.keras.initializers.Zeros())(act_results); # act_results.shape = (N_res, N_res, c_z)
   gate_values = tf.keras.layers.Dense(c_z, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Constant(1.))(input_act);
   act_results = tf.keras.layers.Multiply()([act_results, gate_values]); # act_results.shape = (N_res, N_res, c_z)
-  return tf.keras.Model(inputs = (act, mask), outputs = act_results);
+  return tf.keras.Model(inputs = (act, mask), outputs = act_results, **kwargs);
 
 def MaskedMsaHead(c_m):
   msa = tf.keras.Input((None, c_m)); # msa.shape = (N_seq, N_seq, c_m)
@@ -221,4 +230,6 @@ if __name__ == "__main__":
   results = TriangleMultiplication(64, mode = 'outgoing')([pair_act, pair_mask]);
   print(results.shape);
   results = TriangleMultiplication(64, mode = 'incoming')([pair_act, pair_mask]);
+  print(results.shape);
+  results = TemplatePairStack(64)([pair_act, pair_mask]);
   print(results.shape);
