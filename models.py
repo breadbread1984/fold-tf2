@@ -39,7 +39,7 @@ def Transition(c_t, num_intermediate_factor = 4):
   mask = tf.keras.Input((None,)); # mask.shape = (batch, N_res)
   mask_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(mask); # mask_results.shape = (batch, N_res, 1)
   act_results = tf.keras.layers.LayerNormalization()(act); # act_results.shape = (batch, N_res, c_t)
-  act_results = tf.keras.layers.Dense(c_t * num_intermediate_factor, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TrancatedNormal(stddev = np.sqrt(2)))(act_results); # act_results.shape = (batch, N_res, 4*c_t)
+  act_results = tf.keras.layers.Dense(c_t * num_intermediate_factor, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)))(act_results); # act_results.shape = (batch, N_res, 4*c_t)
   act_results = tf.keras.layers.Dense(c_t, kernel_initializer = tf.keras.initializers.Zeros())(act_results); # act_results.shape = (batch, N_res, c_t)
   return tf.keras.Model(inputs = (act, mask), outputs = act_results);
 
@@ -241,4 +241,6 @@ if __name__ == "__main__":
   results = TriangleMultiplication(64, mode = 'incoming')([pair_act, pair_mask]);
   print(results.shape);
   results = TemplatePairStack(64)([pair_act, pair_mask]);
+  print(results.shape);
+  results = Transition(64)([pair_act, pair_mask]);
   print(results.shape);
