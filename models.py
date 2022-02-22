@@ -3,9 +3,6 @@
 import numpy as np;
 import tensorflow as tf;
 
-def get_initializer_stddev(input_shape):
-  scale = 1 / np.prod(input_shape)
-
 def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_intermediate_channel = 64, num_block = 2, rate = 0.25, **kwargs):
   pair_act = tf.keras.Input((None, c_t)); # pair_act.shape = (N_res, N_res, c_t)
   pair_mask = tf.keras.Input((None, )); # pair_mask.shape = (N_res, N_res)
@@ -225,6 +222,11 @@ def PredictedAlignedErrorHead(c_z, num_bins = 64, max_error_bin = 31):
   logits = tf.keras.layers.Dense(num_bins, kernel_initializer = tf.keras.initializers.Zeros())(act);
   breaks = tf.keras.layers.Lambda(lambda x, m, n: tf.linspace(0., m, n - 1), arguments = {'m': max_error_bin, 'n': num_bins})(act);
   return tf.keras.Model(inputs = act, outputs = (logits, breaks));
+
+def ExperimentallyResolvedHead(c_s):
+  single = tf.keras.Input((c_s,)); # single.shape = (N_res, c_s)
+  logits = tf.keras.layers.Dense(37, kernel_initializer = tf.keras.initializers.Zeros())(single);
+  return tf.keras.Model(inputs = single, outputs = logits);
 
 if __name__ == "__main__":
   import numpy as np;
