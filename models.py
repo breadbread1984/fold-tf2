@@ -213,12 +213,18 @@ def MaskedMsaHead(c_m, num_output = 23, **kwargs):
   return tf.keras.Model(inputs = msa, outputs = logits, **kwargs);
 
 def PredictedLDDTHead(c_s, num_channels = 128, num_bins = 50, **kwargs):
-  act = tf.keras.Input((c_s)); # act.shape = (N_res, c_s)
+  act = tf.keras.Input((c_s,)); # act.shape = (N_res, c_s)
   act_results = tf.keras.layers.LayerNormalization()(act); # act_results.shape = (N_res, c_s)
   act_results = tf.keras.layers.Dense(num_channels, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)))(act_results);
   act_results = tf.keras.layers.Dense(num_channels, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)))(act_results);
   logits = tf.keras.layers.Dense(num_bins, kernel_initializer = tf.keras.initializers.Zeros())(act_results);
   return tf.keras.Model(inputs = act, outputs = logits, **kwargs);
+
+def PredictedAlignedErrorHead(c_z, num_bins = 64, max_error_bin = 31):
+  act = tf.keras.Input((None, c_z)); # act.shape = (N_res, N_res, c_z)
+  logits = tf.keras.layers.Dense(num_bins, kernel_initializer = tf.keras.initializers.Zeros())(act);
+  breaks = tf.keras.layers.Lambda(lambda x, m, n: tf.linspace(0., m, n - 1), arguments = {'m': max_error_bin, 'n': num_bins})(act);
+  return tf.keras.Model(inputs = act, outputs = (logits, breaks));
 
 if __name__ == "__main__":
   import numpy as np;
