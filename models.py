@@ -34,6 +34,15 @@ def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_inter
     pair_act_results = tf.keras.layers.Add()([skip, residual]);
   return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results, **kwargs);
 
+def Transition(c_t, num_intermediate_factor = 4):
+  act = tf.keras.Input((None, c_t)); # act.shape = (batch, N_res, c_t)
+  mask = tf.keras.Input((None,)); # mask.shape = (batch, N_res)
+  mask_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(mask); # mask_results.shape = (batch, N_res, 1)
+  act_results = tf.keras.layers.LayerNormalization()(act); # act_results.shape = (batch, N_res, c_t)
+  act_results = tf.keras.layers.Dense(c_t * num_intermediate_factor, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TrancatedNormal(stddev = np.sqrt(2)))(act_results); # act_results.shape = (batch, N_res, 4*c_t)
+  act_results = tf.keras.layers.Dense(c_t, kernel_initializer = tf.keras.initializers.Zeros())(act_results); # act_results.shape = (batch, N_res, c_t)
+  return tf.keras.Model(inputs = (act, mask), outputs = act_results);
+
 def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbatched_bias = False, **kwargs):
   # NOTE: multi head attention: q_data is query, m_data is key, m_data is value
   # NOTE: differences:
