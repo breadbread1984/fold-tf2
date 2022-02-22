@@ -207,9 +207,18 @@ def TriangleMultiplication(c_z, intermediate_channel = 64, mode = 'outgoing', **
   act_results = tf.keras.layers.Multiply()([act_results, gate_values]); # act_results.shape = (N_res, N_res, c_z)
   return tf.keras.Model(inputs = (act, mask), outputs = act_results, **kwargs);
 
-def MaskedMsaHead(c_m):
+def MaskedMsaHead(c_m, num_output = 23, **kwargs):
   msa = tf.keras.Input((None, c_m)); # msa.shape = (N_seq, N_seq, c_m)
-  
+  logits = tf.keras.layers.Dense(num_output, kernel_initializer = tf.keras.initializers.Zeros())(msa);
+  return tf.keras.Model(inputs = msa, outputs = logits, **kwargs);
+
+def PredictedLDDTHead(c_s, num_channels = 128, num_bins = 50, **kwargs):
+  act = tf.keras.Input((c_s)); # act.shape = (N_res, c_s)
+  act_results = tf.keras.layers.LayerNormalization()(act); # act_results.shape = (N_res, c_s)
+  act_results = tf.keras.layers.Dense(num_channels, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)))(act_results);
+  act_results = tf.keras.layers.Dense(num_channels, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)))(act_results);
+  logits = tf.keras.layers.Dense(num_bins, kernel_initializer = tf.keras.initializers.Zeros())(act_results);
+  return tf.keras.Model(inputs = act, outputs = logits, **kwargs);
 
 if __name__ == "__main__":
   import numpy as np;
