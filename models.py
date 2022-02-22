@@ -24,12 +24,12 @@ def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_inter
     pair_act_results = tf.keras.layers.Add()([skip, residual]);
     # triangle_multiplication_outgoing
     skip = pair_act_results;
-    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'outgoing', name = 'triangle_multiplication_outgoing')(pair_act_results); # residual.shape = (N_res, N_res, c_t)
+    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'outgoing', name = 'triangle_multiplication_outgoing')([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_t)
     pair_act_results = tf.keras.layers.Add()([skip, residual]);
     # triangle_multiplication_incoming
     skip = pair_act_results;
-    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'incoming', name = 'triangle_multiplication_incoming')(pair_act_results); # residual.shape = (N_res, N_res, act)
+    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'incoming', name = 'triangle_multiplication_incoming')([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, act)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_t)
     pair_act_results = tf.keras.layers.Add()([skip, residual]);
   return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results, **kwargs);
@@ -65,7 +65,7 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
   weighted_avg = tf.keras.layers.Multiply()([weighted_avg, gate_values]); # weighted_avg.shape = (batch, N_queries, num_head, value_dim)
   weighted_avg = tf.keras.layers.Reshape((-1, num_head * value_dim))(weighted_avg); # weighted_avg.shape = (batch, N_queries, num_head * value_dim)
   output = tf.keras.layers.Dense(output_dim, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(weighted_avg); # output.shape = (batch, N_queries, output_dim)
-  return tf.keras.Model(inputs = (q_data, m_data, bias, nonbatched_bias, **kwargs) if use_nonbatched_bias else (q_data, m_data, bias), outputs = output, **kwargs);  
+  return tf.keras.Model(inputs = (q_data, m_data, bias, nonbatched_bias) if use_nonbatched_bias else (q_data, m_data, bias), outputs = output, **kwargs);  
 
 def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, **kwargs):
   # NOTE: multi head attention sharing a same set of value vectors among different heads: query is q_data, key is m_data, value is m_data
