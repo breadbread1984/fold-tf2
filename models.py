@@ -228,6 +228,13 @@ def ExperimentallyResolvedHead(c_s):
   logits = tf.keras.layers.Dense(37, kernel_initializer = tf.keras.initializers.Zeros())(single);
   return tf.keras.Model(inputs = single, outputs = logits);
 
+def DistogramHead(c_z, num_bins = 64, first_break = 2.3125, last_break = 21.6875):
+  pair = tf.keras.Input((None, c_z)); # pair.shape = (N_res, N_res, c_z)
+  half_logits = tf.keras.layers.Dense(num_bins, kernel_initializer = tf.keras.initializers.Zeros())(pair);
+  logits = tf.keras.layers.Lambda(lambda x: x + tf.transpose(x, (1,0,2)))(half_logits);
+  breaks = tf.keras.layers.Lambda(lambda x, f, l, n: tf.linspace(f, l, n - 1), arguments = {'f': first_break, 'l': last_break, 'n': num_bins})(pair);
+  return tf.keras.Model(inputs = pair, outputs = (logits, breaks));
+
 if __name__ == "__main__":
   import numpy as np;
   q_data = np.random.normal(size = (4, 20, 64));
