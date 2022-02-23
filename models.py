@@ -11,25 +11,21 @@ def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_inter
   pair_mask_results = pair_mask;
   for i in range(num_block):
     # triangle_attention_starting_node
-    skip = pair_act_results;
     residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_row', name = 'block%d/triangle_attention_starting_node' % i)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # pair_act_results.shape = (N_res, N_res, c_t)
-    pair_act_results = tf.keras.layers.Add()([skip, residual]);
+    pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]);
     # triangle_attention_ending_node
-    skip = pair_act_results;
     residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_column', name = 'block%d/triangle_attention_ending_node' % i)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])))(residual); # pair_act_results.shape = (N_res, N_res, c_t)
-    pair_act_results = tf.keras.layers.Add()([skip, residual]);
+    pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]);
     # triangle_multiplication_outgoing
-    skip = pair_act_results;
     residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'outgoing', name = 'block%d/triangle_multiplication_outgoing' % i)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_t)
-    pair_act_results = tf.keras.layers.Add()([skip, residual]);
+    pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]);
     # triangle_multiplication_incoming
-    skip = pair_act_results;
     residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'incoming', name = 'block%d/triangle_multiplication_incoming' % i)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, act)
     residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = rate, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_t)
-    pair_act_results = tf.keras.layers.Add()([skip, residual]);
+    pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]);
   return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results, **kwargs);
 
 def Transition(c_t, num_intermediate_factor = 4):
@@ -280,18 +276,36 @@ def pseudo_beta_fn(num_unique_aas = 10, use_mask = False):
                                               arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_masks]); # pseudo_beta_mask.shape = (seq_len, num_unique_aas)
   return tf.keras.Model(inputs = (all_atom_positions, aatype, all_atom_masks) if use_mask else (all_atom_positions, aatype), outputs = (pseudo_beta, pseudo_beta_mask) if use_mask else pseudo_beta);
 
-def EvoformerIteration(c_m, c_z, num_outer_channel = 32):
+def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value_dim = 64, \
+  outer_num_channel = 32, outer_first = False, outer_drop_rate = 0., \
+  row_num_head = 8, row_drop_rate = 0.15, \
+  column_num_head = 8, column_drop_rate = 0., \
+  transition_factor = 4, transition_drop_rate = 0., \
+    ):
   msa_act = tf.keras.Input((None, c_m)); # msa_act.shape = (N_seq, N_res, c_m)
   pair_act = tf.keras.Input((None, c_z)); # pair_act.shape = (N_res, N_res, c_z)
   msa_mask = tf.keras.Input((None,)); # msa_mask.shape = (N_seq, N_res)
   pair_mask = tf.keras.Input((None,)); # pair_mask.shape = (N_res, N_res)
-  residual = OuterProductMean(c_z, c_m, num_outer_channel)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_z)
-  residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = 0, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_z)
-  outer_module = tf.keras.layers.Add()([pair_act, residual]); # outer_module.shape = (N_res, N_res, c_z)
-  skip = msa_act;
-  residual = MSARowAttentionWithPairBias(c_m, c_z, num_head = 8)([msa_act, msa_mask, pair_act]); # residual.shape = (N_res, N_res, c_m)
-  residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = 0.15, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_m)
-  msa_act = tf.keras.layers.Add()([skip, residual]); # msa_act.shape = (N_res, N_res, c_m)
+  if outer_first:
+    residual = OuterProductMean(c_z, c_m, num_outer_channel = outer_num_channel)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_z)
+    residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': outer_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
+    pair_act = tf.keras.layers.Add()([pair_act, residual]); # pair_act.shape = (N_res, N_res, c_z)
+  residual = MSARowAttentionWithPairBias(c_m, c_z, key_dim = key_dim, num_head = row_num_head, value_dim = value_dim)([msa_act, msa_mask, pair_act]); # residual.shape = (N_res, N_res, c_m)
+  residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': row_drop_rate})(residual); # residual.shape = (N_res, N_res, c_m)
+  msa_act = tf.keras.layers.Add()([msa_act, residual]); # msa_act.shape = (N_res, N_res, c_m)
+  if not is_extra_msa:
+    residual = MSAColumnAttention(c_m, key_dim = key_dim, num_head = column_num_head, value_dim = value_dim)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_m)
+  else:
+    residual = MSAColumnGlobalAttention(c_m, key_dim = key_dim, num_head = column_num_head, value_dim = value_dim)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_m)
+  residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])), arguments = {'r': column_drop_rate})(residual); # residual.shape = (N_res, N_res, c_m)
+  msa_act = tf.keras.layers.Add()([msa_act, residual]); # msa_act.shape = (N_res, N_res, c_m)
+  residual = Transition(c_m, num_intermediate_factor = transition_factor)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_m)
+  residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': transition_drop_rate})(residual); # residual.shape = (N_res, N_res, c_m)
+  msa_act = tf.keras.layers.Add()([msa_act, residual]); # msa_act.shape = (N_res, N_res, c_m)
+  if not outer_first:
+    residual = OuterProductMean(c_z, c_m, num_outer_channel = outer_num_channel)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_z)
+    residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': outer_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
+    pair_act = tf.keras.layers.Add()([pair_act, residual]); # pair_act.shape = (N_res, N_res, c_z)
   
 
 if __name__ == "__main__":
