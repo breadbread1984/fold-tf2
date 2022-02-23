@@ -280,6 +280,20 @@ def pseudo_beta_fn(num_unique_aas = 10, use_mask = False):
                                               arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_masks]); # pseudo_beta_mask.shape = (seq_len, num_unique_aas)
   return tf.keras.Model(inputs = (all_atom_positions, aatype, all_atom_masks) if use_mask else (all_atom_positions, aatype), outputs = (pseudo_beta, pseudo_beta_mask) if use_mask else pseudo_beta);
 
+def EvoformerIteration(c_m, c_z, num_outer_channel = 32):
+  msa_act = tf.keras.Input((None, c_m)); # msa_act.shape = (N_seq, N_res, c_m)
+  pair_act = tf.keras.Input((None, c_z)); # pair_act.shape = (N_res, N_res, c_z)
+  msa_mask = tf.keras.Input((None,)); # msa_mask.shape = (N_seq, N_res)
+  pair_mask = tf.keras.Input((None,)); # pair_mask.shape = (N_res, N_res)
+  residual = OuterProductMean(c_z, c_m, num_outer_channel)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_z)
+  residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = 0, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_z)
+  outer_module = tf.keras.layers.Add()([pair_act, residual]); # outer_module.shape = (N_res, N_res, c_z)
+  skip = msa_act;
+  residual = MSARowAttentionWithPairBias(c_m, c_z, num_head = 8)([msa_act, msa_mask, pair_act]); # residual.shape = (N_res, N_res, c_m)
+  residual = tf.keras.layers.Lambda(lambda x: tf.nn.dropout(x, rate = 0.15, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])))(residual); # residual.shape = (N_res, N_res, c_m)
+  msa_act = tf.keras.layers.Add()([skip, residual]); # msa_act.shape = (N_res, N_res, c_m)
+  
+
 if __name__ == "__main__":
   import numpy as np;
   q_data = np.random.normal(size = (4, 20, 64));
