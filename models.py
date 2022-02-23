@@ -2,6 +2,7 @@
 
 import numpy as np;
 import tensorflow as tf;
+from residue_constants import restype_order, atom_order, atom_type_num;
 
 def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_intermediate_channel = 64, num_block = 2, rate = 0.25, **kwargs):
   pair_act = tf.keras.Input((None, c_t)); # pair_act.shape = (N_res, N_res, c_t)
@@ -225,7 +226,7 @@ def PredictedAlignedErrorHead(c_z, num_bins = 64, max_error_bin = 31):
 
 def ExperimentallyResolvedHead(c_s):
   single = tf.keras.Input((c_s,)); # single.shape = (N_res, c_s)
-  logits = tf.keras.layers.Dense(37, kernel_initializer = tf.keras.initializers.Zeros())(single);
+  logits = tf.keras.layers.Dense(atom_type_num, kernel_initializer = tf.keras.initializers.Zeros())(single);
   return tf.keras.Model(inputs = single, outputs = logits);
 
 def DistogramHead(c_z, num_bins = 64, first_break = 2.3125, last_break = 21.6875):
@@ -255,15 +256,29 @@ def OuterProductMean(num_output_channel, c_m, num_outer_channel = 32):
 
 def dgram_from_positions(min_bin, max_bin, num_bins = 39):
   positions = tf.keras.Input((3,)); # positions.shape = (N_res, 3)
-  lower_breaks = tf.keras.layers.Lambda(lambda x,l,u,n: tf.linspace(l,u,n), arguments = {'l': min_bin,'u': max_bin, 'n': num_bins})(positions); # lower_breaks.shape = (num_bins)
+  lower_breaks = tf.keras.layers.Lambda(lambda x,l,u,n: tf.linspace(l,u,n), arguments = {'l': min_bin, 'u': max_bin, 'n': num_bins})(positions); # lower_breaks.shape = (num_bins)
   lower_breaks = tf.keras.layers.Lambda(lambda x: tf.math.square(x))(lower_breaks); # lower_breaks.shape = (num_bins,)
   upper_breaks = tf.keras.layers.Lambda(lambda x: tf.concat([x[1:], [1e8]], axis = -1))(lower_breaks); # upper_breaks.shape = (num_bins,)
   dist2 = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.math.square(tf.expand_dims(x, axis = -2) - tf.expand_dims(x, axis = -3)), axis = -1, keepdims = True))(positions); # dist2.shape = (N_res, N_res, 1)
   dgram = tf.keras.layers.Lambda(lambda x: tf.cast(x[0] > x[1], dtype = tf.float32) * tf.cast(x[0] < x[2], dtype = tf.float32))([dist2, lower_breaks, upper_breaks]); # dgram.shape = (N_res, N_res, num_bins)
   return tf.keras.Model(inputs = positions, outputs = dgram);
 
-def pseudo_beta_fn():
-  pass;
+def pseudo_beta_fn(num_unique_aas = 10, use_mask = False):
+  all_atom_positions = tf.keras.Input((atom_type_num, 3), batch_size = num_unique_aas); # all_atom_positions.shape = (num of unique amino acid sequence, atom_type_num, 3)
+  aatype = tf.keras.Input((num_unique_aas,)); # aatype.shape = (seq_len, num of unique amino acid sequence)
+  if use_mask:
+    all_atom_masks = tf.keras.Input((atom_type_num,)); # all_atom_masks.shape = (num of unique amino acid sequence, atom_type_num)
+  is_gly = tf.keras.layers.Lambda(lambda x, g: tf.math.equal(x, g), arguments = {'g': restype_order['G']})(aatype); # is_gly.shape = (seq_len, num_unique_aas)
+  pseudo_beta = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.where(tf.tile(tf.expand_dims(x[0], axis = -1), (1,1,3)),
+                                                                          x[1][..., ca_idx, :],
+                                                                          x[1][..., cb_idx, :]),
+                                       arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_positions]); # pseudo_beta.shape = (seq_len, num_unique_aas, 3)
+  if use_mask:
+    pseudo_beta_mask = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.cast(tf.where(x[0],
+                                                                                         x[1][..., ca_idx],
+                                                                                         x[1][..., cb_idx]), dtype = tf.float32),
+                                              arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_masks]); # pseudo_beta_mask.shape = (seq_len, num_unique_aas)
+  return tf.keras.Model(inputs = (all_atom_positions, aatype), outputs = (pseudo_beta, pseudo_beta_mask) if use_mask else pseudo_beta);
 
 if __name__ == "__main__":
   import numpy as np;
@@ -303,3 +318,10 @@ if __name__ == "__main__":
   positions = np.random.normal(size = (10,3));
   results = dgram_from_positions(3.25, 50.75)(positions);
   print(results.shape);
+  all_atom_positions = np.random.normal(size = (10, 37, 3));
+  aatype = np.random.normal(size = (50,10));
+  all_atom_masks = np.random.randint(low = 0, high = 2, size = (10, 37));
+  pseudo_beta = pseudo_beta_fn()([all_atom_positions, aatype]);
+  print(pseudo_beta.shape);
+  pseudo_beta, pseudo_beta_mask = pseudo_beta_fn(use_mask = True)([all_atom_positions, aatype, all_atom_masks]);
+  print(pseudo_beta_mask.shape);
