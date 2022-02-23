@@ -373,3 +373,11 @@ if __name__ == "__main__":
   print(pseudo_beta.shape);
   pseudo_beta, pseudo_beta_mask = pseudo_beta_fn(use_mask = True)([all_atom_positions, aatype, all_atom_masks]);
   print(pseudo_beta_mask.shape);
+  msa_act = np.random.normal(size = (4, 20, 32));
+  pair_act = np.random.normal(size = (4, 20, 64));
+  msa_mask = np.random.normal(size = (4, 20));
+  pair_mask = np.random.normal(size = (4, 20));
+  msa_act, pair_act = EvoformerIteration(32, 64, False)([msa_act, pair_act, msa_mask, pair_mask]);
+  print(msa_act.shape, pair_act.shape);
+  msa_act, pair_act = EvoformerIteration(32, 64, False)([msa_act, pair_act, msa_mask, pair_mask]);
+  print(msa_act.shape, pair_act.shape);
