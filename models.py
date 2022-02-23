@@ -278,7 +278,7 @@ def pseudo_beta_fn(num_unique_aas = 10, use_mask = False):
                                                                                          x[1][..., ca_idx],
                                                                                          x[1][..., cb_idx]), dtype = tf.float32),
                                               arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_masks]); # pseudo_beta_mask.shape = (seq_len, num_unique_aas)
-  return tf.keras.Model(inputs = (all_atom_positions, aatype), outputs = (pseudo_beta, pseudo_beta_mask) if use_mask else pseudo_beta);
+  return tf.keras.Model(inputs = (all_atom_positions, aatype, all_atom_masks) if use_mask else (all_atom_positions, aatype), outputs = (pseudo_beta, pseudo_beta_mask) if use_mask else pseudo_beta);
 
 if __name__ == "__main__":
   import numpy as np;
