@@ -4,18 +4,18 @@ import numpy as np;
 import tensorflow as tf;
 from residue_constants import restype_order, atom_order, atom_type_num;
 
-def TemplatePairStack(c_t, key_dim = 64, num_head = 4, value_dim = 64, num_intermediate_channel = 64, num_block = 2, rate = 0.25, **kwargs):
+def TemplatePairStack(c_t, num_head = 4, num_intermediate_channel = 64, num_block = 2, rate = 0.25, **kwargs):
   pair_act = tf.keras.Input((None, c_t)); # pair_act.shape = (N_res, N_res, c_t)
   pair_mask = tf.keras.Input((None, )); # pair_mask.shape = (N_res, N_res)
   pair_act_results = pair_act;
   pair_mask_results = pair_mask;
   for i in range(num_block):
     # triangle_attention_starting_node
-    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_row', name = 'block%d/triangle_attention_starting_node' % i)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
+    residual = TriangleAttention(c_t, num_head = num_head, orientation = 'per_row', name = 'block%d/triangle_attention_starting_node' % i)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': rate})(residual); # pair_act_results.shape = (N_res, N_res, c_t)
     pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]);
     # triangle_attention_ending_node
-    residual = TriangleAttention(c_t, key_dim = key_dim, num_head = num_head, value_dim = value_dim, orientation = 'per_column', name = 'block%d/triangle_attention_ending_node' % i)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
+    residual = TriangleAttention(c_t, num_head = num_head, orientation = 'per_column', name = 'block%d/triangle_attention_ending_node' % i)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])), arguments = {'r': rate})(residual); # pair_act_results.shape = (N_res, N_res, c_t)
     pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]);
     # triangle_multiplication_outgoing
@@ -103,7 +103,7 @@ def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, **kw
   output = tf.keras.layers.Dense(output_dim, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(weighted_avg); # output.shape = (batch, N_queries, output_dim)
   return tf.keras.Model(inputs = (q_data, m_data, q_mask), outputs = output, **kwargs);
 
-def MSARowAttentionWithPairBias(c_m, c_z, key_dim = 64, num_head = 4, value_dim = 64, **kwargs):
+def MSARowAttentionWithPairBias(c_m, c_z, num_head = 4, **kwargs):
   # NOTE: multi head self attention: query is msa_act, key is msa_act, value is msa_act.
   # NOTE: differences
   # 1) use msa_mask to control bias, bias's shape is N_seq(batch) x num_head(1) x N_queries(1) x N_res.
@@ -116,10 +116,10 @@ def MSARowAttentionWithPairBias(c_m, c_z, key_dim = 64, num_head = 4, value_dim 
   pair_act_results = tf.keras.layers.LayerNormalization()(pair_act); # pair_act_results.shape = (N_res, N_res, c_z)
   nonbatched_bias = tf.keras.layers.Dense(num_head, use_bias = False, kernel_initializer = tf.keras.initializers.RandomNormal(stddev = 1./np.sqrt(c_z)))(pair_act_results); # nonbatched_bias.shape = (N_res. N_res, num_head)
   nonbatched_bias = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2, 0, 1)))(nonbatched_bias); # nonbatched_bias.shape = (num_head, N_res, N_res)
-  msa_act_results = Attention(c_m, key_dim = key_dim, num_head = num_head, value_dim = value_dim, use_nonbatched_bias = True)([msa_act_results, msa_act_results, bias, nonbatched_bias]); # msa_act_results.shape = (N_seq, N_res, c_m)
+  msa_act_results = Attention(c_m, key_dim = c_m, num_head = num_head, value_dim = c_m, use_nonbatched_bias = True)([msa_act_results, msa_act_results, bias, nonbatched_bias]); # msa_act_results.shape = (N_seq, N_res, c_m)
   return tf.keras.Model(inputs = (msa_act, msa_mask, pair_act), outputs = msa_act_results, **kwargs);
 
-def MSAColumnAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64, **kwargs):
+def MSAColumnAttention(c_m, num_head = 4, **kwargs):
   # NOTE: multi head self attention: query is msa_act.T, key is msa_act.T, value is msa_act.T.
   # NOTE: differences
   # 1) use msa_mask to control bias, bias's shape is N_res(batch) x num_head(1) x N_queries(1) x N_seq.
@@ -129,7 +129,7 @@ def MSAColumnAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64, **kwargs
   msa_mask_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(msa_mask); # msa_mask_results.shape = (N_res, N_seq)
   bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(msa_mask_results); # bias.shape = (N_res, 1, 1, N_seq)
   msa_act_results = tf.keras.layers.LayerNormalization()(msa_act_results); # msa_act_results.shape = (N_res, N_seq, c_m)
-  msa_act_results = Attention(c_m, key_dim = key_dim, num_head = num_head, value_dim = value_dim, use_nonbatched_bias = False)([msa_act_results, msa_act_results, bias]); # msa_act_results.shape = (N_res, N_seq, c_m)
+  msa_act_results = Attention(c_m, key_dim = c_m, num_head = num_head, value_dim = c_m, use_nonbatched_bias = False)([msa_act_results, msa_act_results, bias]); # msa_act_results.shape = (N_res, N_seq, c_m)
   msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act_results); # msa_act_results.shape = (N_seq, N_res, c_m)
   return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results, **kwargs);
 
@@ -148,7 +148,7 @@ def MSAColumnGlobalAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64, **
   msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act_results); # msa_act_results.shape = (N_seq, N_res, c_m)
   return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results, **kwargs);
 
-def TriangleAttention(c_z, key_dim = 64, num_head = 4, value_dim = 64, orientation = 'per_column', **kwargs):
+def TriangleAttention(c_z, num_head = 4, orientation = 'per_column', **kwargs):
   # NOTE: multi head self attention: query is pair_act, key is pair_act, value is pair_act.
   # NOTE: difference:
   # 1) use pair_mask to control bias.
@@ -166,7 +166,7 @@ def TriangleAttention(c_z, key_dim = 64, num_head = 4, value_dim = 64, orientati
   pair_act_results = tf.keras.layers.LayerNormalization()(pair_act_results); # pair_act_results.shape = (N_res, N_res, c_z)
   nonbatched_bias = tf.keras.layers.Dense(num_head, use_bias = False, kernel_initializer = tf.keras.initializers.RandomNormal(stddev = 1./np.sqrt(c_z)))(pair_act_results); # nonbatched_bias.shape = (N_res, N_res, num_head)
   nonbatched_bias = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2, 0, 1)))(nonbatched_bias); # nonbatched_bias.shape = (num_head, N_res, N_res)
-  pair_act_results = Attention(c_z, key_dim = key_dim, num_head = num_head, value_dim = value_dim, use_nonbatched_bias = True)([pair_act_results, pair_act_results, bias, nonbatched_bias]); # pair_act_results.shape = (N_res, N_res, c_z)
+  pair_act_results = Attention(c_z, key_dim = c_z, num_head = num_head, value_dim = c_z, use_nonbatched_bias = True)([pair_act_results, pair_act_results, bias, nonbatched_bias]); # pair_act_results.shape = (N_res, N_res, c_z)
   if orientation == 'per_column':
     pair_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(pair_act_results); # pair_act_results.shape = (N_res, N_res, c_z)
   return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results, **kwargs);
@@ -295,11 +295,11 @@ def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value
     residual = OuterProductMean(c_z, c_m, num_outer_channel = outer_num_channel)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_z)
     residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': outer_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
     pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
-  residual = MSARowAttentionWithPairBias(c_m, c_z, key_dim = key_dim, num_head = row_num_head, value_dim = value_dim)([msa_act_results, msa_mask_results, pair_act_results]); # residual.shape = (N_res, N_res, c_m)
+  residual = MSARowAttentionWithPairBias(c_m, c_z, num_head = row_num_head)([msa_act_results, msa_mask_results, pair_act_results]); # residual.shape = (N_res, N_res, c_m)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': row_drop_rate})(residual); # residual.shape = (N_res, N_res, c_m)
   msa_act_results = tf.keras.layers.Add()([msa_act_results, residual]); # msa_act_results.shape = (N_res, N_res, c_m)
   if not is_extra_msa:
-    residual = MSAColumnAttention(c_m, key_dim = key_dim, num_head = column_num_head, value_dim = value_dim)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_m)
+    residual = MSAColumnAttention(c_m, num_head = column_num_head)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_m)
   else:
     residual = MSAColumnGlobalAttention(c_m, key_dim = key_dim, num_head = column_num_head, value_dim = value_dim)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_m)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])), arguments = {'r': column_drop_rate})(residual); # residual.shape = (N_res, N_res, c_m)
@@ -317,10 +317,10 @@ def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value
   residual = TriangleMultiplication(c_z, intermediate_channel = tri_mult_intermediate_channel, mode = 'incoming')([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_z)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': tri_mult_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
   pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
-  residual = TriangleAttention(c_z, key_dim = key_dim, num_head = num_head, value_dim = value_dim)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_z)
+  residual = TriangleAttention(c_z, num_head = num_head)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_z)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': tri_attn_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
   pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
-  residual = TriangleAttention(c_z, key_dim = key_dim, num_head = num_head, value_dim = value_dim)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_z)
+  residual = TriangleAttention(c_z, num_head = num_head)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_z)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])), arguments = {'r': tri_attn_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
   pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
   residual = Transition(c_z, num_intermediate_factor = transition_factor)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_z)
@@ -374,10 +374,15 @@ if __name__ == "__main__":
   pseudo_beta, pseudo_beta_mask = pseudo_beta_fn(use_mask = True)([all_atom_positions, aatype, all_atom_masks]);
   print(pseudo_beta_mask.shape);
   msa_act = np.random.normal(size = (4, 20, 32));
-  pair_act = np.random.normal(size = (4, 20, 64));
+  pair_act = np.random.normal(size = (20, 20, 64));
   msa_mask = np.random.normal(size = (4, 20));
-  pair_mask = np.random.normal(size = (4, 20));
+  pair_mask = np.random.normal(size = (20, 20));
+  q_data = np.random.normal(size = (4,20,32));
+  bias = np.random.normal(size = (4,1,1,20));
+  nonbatch_bias = np.random.normal(size = (8,20,20));
+  results = Attention(32,32,8,32,True)([q_data, q_data, bias, nonbatch_bias]);
+  print(results.shape)
   msa_act, pair_act = EvoformerIteration(32, 64, False)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
-  msa_act, pair_act = EvoformerIteration(32, 64, False)([msa_act, pair_act, msa_mask, pair_mask]);
+  msa_act, pair_act = EvoformerIteration(32, 64, False, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
