@@ -133,7 +133,7 @@ def MSAColumnAttention(c_m, num_head = 4, **kwargs):
   msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act_results); # msa_act_results.shape = (N_seq, N_res, c_m)
   return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results, **kwargs);
 
-def MSAColumnGlobalAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64, **kwargs):
+def MSAColumnGlobalAttention(c_m, num_head = 4, **kwargs):
   # NOTE: multi head self attention: query is msa_act.T, key is msa_act.T, value is msa_act.T.
   # NOTE: differences
   # 1) use msa_mask to control q_mask which controls bias in global attention.
@@ -144,7 +144,7 @@ def MSAColumnGlobalAttention(c_m, key_dim = 64, num_head = 4, value_dim = 64, **
   #bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(msa_mask_results); # bias.shape = (N_res, 1, 1, N_seq)
   msa_act_results = tf.keras.layers.LayerNormalization()(msa_act_results); # msa_act_results.shape = (N_res, N_seq, c_m)
   msa_mask_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(msa_mask_results); # msa_mask_results.shape = (N_res, N_seq, 1)
-  msa_act_results = GlobalAttention(c_m, key_dim = key_dim, num_head = num_head, value_dim = value_dim)([msa_act_results, msa_act_results, msa_mask_results]); # msa_act_results.shape = (N_res, N_seq, c_m)
+  msa_act_results = GlobalAttention(c_m, key_dim = c_m, num_head = num_head, value_dim = c_m)([msa_act_results, msa_act_results, msa_mask_results]); # msa_act_results.shape = (N_res, N_seq, c_m)
   msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act_results); # msa_act_results.shape = (N_seq, N_res, c_m)
   return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results, **kwargs);
 
@@ -301,7 +301,7 @@ def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value
   if not is_extra_msa:
     residual = MSAColumnAttention(c_m, num_head = column_num_head)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_m)
   else:
-    residual = MSAColumnGlobalAttention(c_m, key_dim = key_dim, num_head = column_num_head, value_dim = value_dim)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_m)
+    residual = MSAColumnGlobalAttention(c_m, num_head = column_num_head)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_m)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])), arguments = {'r': column_drop_rate})(residual); # residual.shape = (N_res, N_res, c_m)
   msa_act_results = tf.keras.layers.Add()([msa_act_results, residual]); # msa_act_results.shape = (N_res, N_res, c_m)
   residual = Transition(c_m, num_intermediate_factor = transition_factor)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_m)
@@ -377,12 +377,11 @@ if __name__ == "__main__":
   pair_act = np.random.normal(size = (20, 20, 64));
   msa_mask = np.random.normal(size = (4, 20));
   pair_mask = np.random.normal(size = (20, 20));
-  q_data = np.random.normal(size = (4,20,32));
-  bias = np.random.normal(size = (4,1,1,20));
-  nonbatch_bias = np.random.normal(size = (8,20,20));
-  results = Attention(32,32,8,32,True)([q_data, q_data, bias, nonbatch_bias]);
-  print(results.shape)
   msa_act, pair_act = EvoformerIteration(32, 64, False)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
   msa_act, pair_act = EvoformerIteration(32, 64, False, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
+  print(msa_act.shape, pair_act.shape);
+  msa_act, pair_act = EvoformerIteration(32, 64, True)([msa_act, pair_act, msa_mask, pair_mask]);
+  print(msa_act.shape, pair_act.shape);
+  msa_act, pair_act = EvoformerIteration(32, 64, True, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
