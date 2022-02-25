@@ -328,19 +328,20 @@ def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value
   pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
   return tf.keras.Model(inputs = (msa_act, pair_act, msa_mask, pair_mask), outputs = (msa_act_results, pair_act_results));
 
-def EmbeddingsAndEvoformer(N_seq, N_res, N_template):
+def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_channel = 128):
   target_feat = tf.keras.Input((None,), batch_size = N_res); # target_feat.shape = (N_res, None)
   msa_feat = tf.keras.Input((N_res, None), batch_size = N_seq); # msa_feat.shape = (N_seq, N_res, None)
   seq_mask = tf.keras.Input((), batch_size = N_res); # seq_mask.shape = (N_res)
   aatype = tf.keras.Input((), batch_size = N_res); # aatype.shape = (N_res)
   prev_pos = tf.keras.Input((atom_type_num, 3), batch_size = N_res); # prev_pos.shape = (N_res, atom_type_num, 3)
-  prev_msa_first_row = tf.keras.Input((None,), batch_size = N_res); # prev_msa_first_row.shape = (N_res, msa_channel)
-  prev_pair = tf.keras.Input((N_res, None), batch_size = N_res); # prev_pair.shape = (N_res, N_res, pair_channel)
+  prev_msa_first_row = tf.keras.Input((msa_channel,), batch_size = N_res); # prev_msa_first_row.shape = (N_res, msa_channel)
+  prev_pair = tf.keras.Input((N_res, pair_channel), batch_size = N_res); # prev_pair.shape = (N_res, N_res, pair_channel)
   residue_index = tf.keras.Input((), batch_size = N_res); # residue_index.shape = (N_res)
   extra_msa_mask = tf.keras.Input((N_res,), batch_size = N_seq); # extra_msa_mask.shape = (N_seq, N_res)
   template_aatype = tf.keras.Input((N_res, None), batch_size = N_template); # template_aatype.shape = (N_template, N_res, None)
   template_all_atom_positions = tf.keras.Input((N_res, None, None), batch_size = N_template); # template_all_atom_positions.shape = (N_template, N_res, None, None)
   template_all_atom_masks = tf.keras.Input((N_res, None), batch_size = N_template); # template_all_atom_masks.shape = (N_tepmlate, N_res, None)
+  preprocess_1d = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(target_feat); # preprocess_1d.shape = (N_res, msa_channel)
   
   return tf.keras.Model(inputs = (target_feat, msa_feat, seq_mask, aatype, prev_pos, prev_msa, prev_pair, residue_index, extra_msa_mask, template_aatype, template_all_atom_positions, template_all_atom_masks,),
                         outputs = ());
