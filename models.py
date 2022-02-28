@@ -259,22 +259,22 @@ def dgram_from_positions(min_bin, max_bin, num_bins = 39):
   dgram = tf.keras.layers.Lambda(lambda x: tf.cast(x[0] > x[1], dtype = tf.float32) * tf.cast(x[0] < x[2], dtype = tf.float32))([dist2, lower_breaks, upper_breaks]); # dgram.shape = (N_res, N_res, num_bins)
   return tf.keras.Model(inputs = positions, outputs = dgram);
 
-def pseudo_beta_fn(num_unique_aas = 10, use_mask = False):
-  all_atom_positions = tf.keras.Input((atom_type_num, 3), batch_size = num_unique_aas); # all_atom_positions.shape = (num of unique amino acid sequence, atom_type_num, 3)
-  aatype = tf.keras.Input((num_unique_aas,)); # aatype.shape = (seq_len, num of unique amino acid sequence)
+def pseudo_beta_fn(use_mask = False):
+  aatype = tf.keras.Input((None,)); # aatype.shape = (seq_len, N_res)
+  all_atom_positions = tf.keras.Input((atom_type_num, 3)); # all_atom_positions.shape = (N_res, atom_type_num, 3)
   if use_mask:
-    all_atom_masks = tf.keras.Input((atom_type_num,)); # all_atom_masks.shape = (num of unique amino acid sequence, atom_type_num)
-  is_gly = tf.keras.layers.Lambda(lambda x, g: tf.math.equal(x, g), arguments = {'g': restype_order['G']})(aatype); # is_gly.shape = (seq_len, num_unique_aas)
+    all_atom_masks = tf.keras.Input((atom_type_num,)); # all_atom_masks.shape = (N_res, atom_type_num)
+  is_gly = tf.keras.layers.Lambda(lambda x, g: tf.math.equal(x, g), arguments = {'g': restype_order['G']})(aatype); # is_gly.shape = (seq_len, N_res)
   pseudo_beta = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.where(tf.tile(tf.expand_dims(x[0], axis = -1), (1,1,3)),
                                                                           x[1][..., ca_idx, :],
                                                                           x[1][..., cb_idx, :]),
-                                       arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_positions]); # pseudo_beta.shape = (seq_len, num_unique_aas, 3)
+                                       arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_positions]); # pseudo_beta.shape = (seq_len, N_res, 3)
   if use_mask:
     pseudo_beta_mask = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.cast(tf.where(x[0],
                                                                                          x[1][..., ca_idx],
                                                                                          x[1][..., cb_idx]), dtype = tf.float32),
-                                              arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_masks]); # pseudo_beta_mask.shape = (seq_len, num_unique_aas)
-  return tf.keras.Model(inputs = (all_atom_positions, aatype, all_atom_masks) if use_mask else (all_atom_positions, aatype), outputs = (pseudo_beta, pseudo_beta_mask) if use_mask else pseudo_beta);
+                                              arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_masks]); # pseudo_beta_mask.shape = (seq_len, N_res)
+  return tf.keras.Model(inputs = (aatype, all_atom_positions, all_atom_masks) if use_mask else (aatype, all_atom_positions), outputs = (pseudo_beta, pseudo_beta_mask) if use_mask else pseudo_beta);
 
 def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value_dim = 64, \
     outer_num_channel = 32, outer_first = False, outer_drop_rate = 0., \
@@ -341,7 +341,13 @@ def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_cha
   template_aatype = tf.keras.Input((N_res, None), batch_size = N_template); # template_aatype.shape = (N_template, N_res, None)
   template_all_atom_positions = tf.keras.Input((N_res, None, None), batch_size = N_template); # template_all_atom_positions.shape = (N_template, N_res, None, None)
   template_all_atom_masks = tf.keras.Input((N_res, None), batch_size = N_template); # template_all_atom_masks.shape = (N_tepmlate, N_res, None)
-  preprocess_1d = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(target_feat); # preprocess_1d.shape = (N_res, msa_channel)
+  preprocess_1d = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(target_feat); # preprocess_1d.shape = (N_res, msa_channel)
+  preprocess_msa = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(msa_feat); # prreprocess_msa.shape = (N_seq, N_res, msa_channel)
+  msa_activations = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0], axis = 0) + x[1])([preprocess_1d, preprocess_msa]); # msa_activations.shape = (N_seq, N_res, msa_channel)
+  left_single = tf.keras.layers.Dense(pair_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(target_feat); # left_single.shape = (N_res, pair_channel)
+  right_single = tf.keras.layers.Dense(pair_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(target_feat); # right_single.shape = (N_res, pair_channel)
+  pair_activations = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0], axis = 1) + tf.expand_dims(x[1], axis = 0))([left_single, right_single]); # pair_activations.shape = (N_res, N_res, pair_channel)
+  mask_2d = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = 1) * tf.expand_dims(x, axis = 0))(seq_mask); # mask_2d.shape = (N_res, N_res)
   
   return tf.keras.Model(inputs = (target_feat, msa_feat, seq_mask, aatype, prev_pos, prev_msa, prev_pair, residue_index, extra_msa_mask, template_aatype, template_all_atom_positions, template_all_atom_masks,),
                         outputs = ());
