@@ -268,12 +268,12 @@ def pseudo_beta_fn(use_mask = False):
   pseudo_beta = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.where(tf.tile(tf.expand_dims(x[0], axis = -1), (1,3)),
                                                                           x[1][..., ca_idx, :],
                                                                           x[1][..., cb_idx, :]),
-                                       arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_positions]); # pseudo_beta.shape = (seq_len, N_res, 3)
+                                       arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_positions]); # pseudo_beta.shape = (N_res, N_res, 3)
   if use_mask:
     pseudo_beta_mask = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.cast(tf.where(x[0],
                                                                                          x[1][..., ca_idx],
                                                                                          x[1][..., cb_idx]), dtype = tf.float32),
-                                              arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_masks]); # pseudo_beta_mask.shape = (seq_len, N_res)
+                                              arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_masks]); # pseudo_beta_mask.shape = (N_res, N_res)
   return tf.keras.Model(inputs = (aatype, all_atom_positions, all_atom_masks) if use_mask else (aatype, all_atom_positions), outputs = (pseudo_beta, pseudo_beta_mask) if use_mask else pseudo_beta);
 
 def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value_dim = 64, \
@@ -328,7 +328,7 @@ def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value
   pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
   return tf.keras.Model(inputs = (msa_act, pair_act, msa_mask, pair_mask), outputs = (msa_act_results, pair_act_results));
 
-def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_channel = 128, recycle_pos = True):
+def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32):
   target_feat = tf.keras.Input((None,), batch_size = N_res); # target_feat.shape = (N_res, None)
   msa_feat = tf.keras.Input((N_res, None), batch_size = N_seq); # msa_feat.shape = (N_seq, N_res, None)
   seq_mask = tf.keras.Input((), batch_size = N_res); # seq_mask.shape = (N_res)
@@ -350,6 +350,16 @@ def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_cha
   mask_2d = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = 1) * tf.expand_dims(x, axis = 0))(seq_mask); # mask_2d.shape = (N_res, N_res)
   if recycle_pos:
     prev_pseudo_beta = pseudo_beta_fn(use_mask = False)([aatype, prev_pos]); # prev_pseudo_beta.shape = (N_res, N_res, 3)
+    dgram = dgram_from_positions(prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins)(prev_pseudo_beta); # dgram.shape = (N_res, N_res, num_bins)
+    dgram = tf.keras.layers.Dense(pair_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(dgram); # dgram.shape = (N_res, N_res, pair_channel)
+    pair_activations = tf.keras.layers.Add()([pair_activations, dgram]); # pair_activations.shape = (N_res, N_res, pair_channel)
+  if recycle_features:
+    prev_msa_first_row_results = tf.keras.layers.LayerNormalization()(prev_msa_first_row); # prev_msa_first_row_results.shape = (N_res, msa_channel)
+    msa_activations = tf.keras.layers.Lambda(lambda x: tf.concat([tf.expand_dims(x[1], axis = 0), tf.zeros((tf.shape(tf.x[0])[0] - 1, tf.shape(tf.x[0])[1]))], axis = 0) + x[0])([msa_activations, prev_msa_first_row_results]); # msa_activations.shape = (N_seq, N_res, msa_channel)
+  prev_pair_results = tf.keras.layers.LayerNormalization()(prev_pair); # prev_pair_results.shape = (N_res, N_res, pair_channel)
+  pair_activations = tf.keras.layers.Add()([pair_activations, prev_pair_results]); # pair_activations.shape = (N_res, N_res, pair_channel)
+  offset = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = 1) - tf.expand_dims(x, axis = 0))(residue_index); # offset.shape = (N_res, N_res)
+  rel_pos = 
   return tf.keras.Model(inputs = (target_feat, msa_feat, seq_mask, aatype, prev_pos, prev_msa, prev_pair, residue_index, extra_msa_mask, template_aatype, template_all_atom_positions, template_all_atom_masks,),
                         outputs = ());
 
