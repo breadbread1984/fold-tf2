@@ -250,8 +250,8 @@ def OuterProductMean(num_output_channel, c_m, num_outer_channel = 32):
   act_results = tf.keras.layers.Lambda(lambda x: x[0] / (x[1] + 1e-3))([act_results, norm]); # act_results.shape = (N_res, N_res, num_output_channel)
   return tf.keras.Model(inputs = (act, mask), outputs = act_results);
 
-def dgram_from_positions(min_bin, max_bin, num_bins = 39):
-  positions = tf.keras.Input((3,)); # positions.shape = (N_res, 3)
+def dgram_from_positions(min_bin, max_bin, num_bins = 39, use_3d = False):
+  positions = tf.keras.Input((3,)) if use_3d == False else tf.keras.Input((None, 3)); # positions.shape = (N_res, 3)
   lower_breaks = tf.keras.layers.Lambda(lambda x,l,u,n: tf.linspace(l,u,n), arguments = {'l': min_bin, 'u': max_bin, 'n': num_bins})(positions); # lower_breaks.shape = (num_bins)
   lower_breaks = tf.keras.layers.Lambda(lambda x: tf.math.square(x))(lower_breaks); # lower_breaks.shape = (num_bins,)
   upper_breaks = tf.keras.layers.Lambda(lambda x: tf.concat([x[1:], [1e8]], axis = -1))(lower_breaks); # upper_breaks.shape = (num_bins,)
@@ -328,7 +328,27 @@ def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value
   pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
   return tf.keras.Model(inputs = (msa_act, pair_act, msa_mask, pair_mask), outputs = (msa_act_results, pair_act_results));
 
-def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32):
+'''
+def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39):
+  query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
+  template_aatype = tf.keras.Input((None,)); # template_aatype.shape = (N_template, N_res,)
+  template_pseudo_beta_mask = tf.keras.Input((None,)); # template_pseudo_beta_mask.shape = (N_template, N_res)
+  template_mask = tf.keras.Input(()); # template_mask.shape = (N_template)
+  template_seudo_beta = tf.keras.Input((None, None,)); # template_seudo_beta.shape = (N_template, N_res, None)
+  template_seudo_beta_mask = tf.keras.Input((None,)); # template_seudo_beta_mask.shape = (N_template, N_res)
+  template_mask_2d = tf.keras.layers.Lambda(lambda x: tf.cast(tf.expand_dims(x[0], axis = -1) * tf.expand_dims(x[0], axis = 0), dtype = x[1].dtype))([template_pseudo_beta_mask, query_embedding]); # template_mask_2d.shape = (N_template, N_template)
+  template_dgram = dgram_from_positions(min_bin, max_bin, num_bins, use_3d = True)(template_seudo_beta); # template_dgram.shape = (N_template, N_res, N_res, num_bins)
+  template_dgram = tf.keras.layers.Lambda(lambda x: tf.cast(x[0], dtype = x[1].dtype))([template_dgram, query_embedding]); # template_dgram.shape = (N_template, N_res, N_res, num_bins)
+  aatype = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 22))(template_aatype); # aatype.shape = (N_template, N_res, 22)
+  
+def TemplateEmbedding(c_z):
+  query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
+  template_mask = tf.keras.Input(()); # template_mask.shape = (N_template)
+  mask_2d = tf.keras.Input((None,)); # mask_2d.shape = (N_res, N_res)
+  template_mask_results = tf.keras.layers.Lambda(lambda x: tf.cast(x[0], dtype = x[1].dtype))([template_mask, query_embedding]); # template_mask_results.shape = (N_template)
+'''
+
+def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64):
   target_feat = tf.keras.Input((None,), batch_size = N_res); # target_feat.shape = (N_res, None)
   msa_feat = tf.keras.Input((N_res, None), batch_size = N_seq); # msa_feat.shape = (N_seq, N_res, None)
   seq_mask = tf.keras.Input((), batch_size = N_res); # seq_mask.shape = (N_res)
@@ -337,10 +357,14 @@ def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_cha
   prev_msa_first_row = tf.keras.Input((msa_channel,), batch_size = N_res); # prev_msa_first_row.shape = (N_res, msa_channel)
   prev_pair = tf.keras.Input((N_res, pair_channel), batch_size = N_res); # prev_pair.shape = (N_res, N_res, pair_channel)
   residue_index = tf.keras.Input((), batch_size = N_res, dtype = tf.int32); # residue_index.shape = (N_res)
+  extra_msa = tf.keras.Input((N_res,), batch_size = N_seq); # extra_msa.shape = (N_seq, N_res)
   extra_msa_mask = tf.keras.Input((N_res,), batch_size = N_seq); # extra_msa_mask.shape = (N_seq, N_res)
-  template_aatype = tf.keras.Input((N_res, None), batch_size = N_template); # template_aatype.shape = (N_template, N_res, None)
+  extra_has_deletion = tf.keras.Input((N_res,), batch_size = N_seq); # extra_has_deletion.shape = (N_seq, N_res)
+  extra_deletion_value = tf.keras.Input((N_res,), batch_size = N_seq); # extra_deletion_value.shape = (N_seq, N_res)
+  template_aatype = tf.keras.Input((N_res,), batch_size = N_template); # template_aatype.shape = (N_template, N_res,)
   template_all_atom_positions = tf.keras.Input((N_res, None, None), batch_size = N_template); # template_all_atom_positions.shape = (N_template, N_res, None, None)
   template_all_atom_masks = tf.keras.Input((N_res, None), batch_size = N_template); # template_all_atom_masks.shape = (N_tepmlate, N_res, None)
+  template_mask = tf.keras.Input((), batch_size = N_template); # template_mask.shape = (N_template)
   preprocess_1d = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(target_feat); # preprocess_1d.shape = (N_res, msa_channel)
   preprocess_msa = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(msa_feat); # prreprocess_msa.shape = (N_seq, N_res, msa_channel)
   msa_activations = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0], axis = 0) + x[1])([preprocess_1d, preprocess_msa]); # msa_activations.shape = (N_seq, N_res, msa_channel)
@@ -362,8 +386,14 @@ def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_cha
   rel_pos = tf.keras.layers.Lambda(lambda x, r: tf.one_hot(tf.clip_by_value(x + r, 0, 2 * r), 2 * r + 1), arguments = {'r': max_relative_feature})(offset); # rel_pos.shape = (N_res, N_res, 2 * max_relative_feature + 1)
   rel_pos = tf.keras.layers.Dense(pair_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(rel_pos); # rel_pos.shape = (N_res, N_res, pair_channel)
   pair_activations = tf.keras.layers.Add()([pair_activations, rel_pos]); # pair_activations.shape = (N_res, N_res, pair_channel)
+  if template_enabled:
+    # TODO: will implement in the future
+    pass
+  msa_1hot = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 23))(extra_msa); # msa_1hot.shape = (N_seq, N_res, 23)
+  extra_msa_feat = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], tf.expand_dims(x[1], axis = -1), tf.expand_dims(x[2], axis = -1)], axis = -1))([msa_1hot, extra_has_deletion, extra_deletion_value]); # extra_msa_feat.shape = (N_seq, N_res, 25)
+  extra_msa_activations = tf.keras.layers.Dense(extra_msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(extra_msa_feat); # extra_msa_activations.shape = (N_seq, N_res, extra_msa_channel)
   
-  return tf.keras.Model(inputs = (target_feat, msa_feat, seq_mask, aatype, prev_pos, prev_msa, prev_pair, residue_index, extra_msa_mask, template_aatype, template_all_atom_positions, template_all_atom_masks,),
+  return tf.keras.Model(inputs = (target_feat, msa_feat, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa_mask, template_aatype, template_all_atom_positions, template_all_atom_masks,),
                         outputs = ());
 
 if __name__ == "__main__":
@@ -403,7 +433,10 @@ if __name__ == "__main__":
   print(results.shape);
   positions = np.random.normal(size = (10,3));
   results = dgram_from_positions(3.25, 50.75)(positions);
-  print(results.shape);
+  print('dgram2d.shape = ', results.shape);
+  positions = np.random.normal(size = (4,10,3));
+  results = dgram_from_positions(3.25, 50.75, use_3d = True)(positions);
+  print('dgram3d.shape = ', results.shape);
   all_atom_positions = np.random.normal(size = (10, 37, 3));
   aatype = np.random.normal(size = (10,));
   all_atom_masks = np.random.randint(low = 0, high = 2, size = (10, 37));
