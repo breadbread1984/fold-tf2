@@ -265,12 +265,12 @@ def pseudo_beta_fn(use_mask = False):
   if use_mask:
     all_atom_masks = tf.keras.Input((atom_type_num,)); # all_atom_masks.shape = (N_res, atom_type_num)
   is_gly = tf.keras.layers.Lambda(lambda x, g: tf.math.equal(x, g), arguments = {'g': restype_order['G']})(aatype); # is_gly.shape = (N_res)
-  pseudo_beta = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.where(tf.tile(tf.reshape(x[0], (-1,1,1)), (1,1,3)),
+  pseudo_beta = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.where(tf.tile(tf.expand_dims(x[0], axis = -1), (1,3)),
                                                                           x[1][..., ca_idx, :],
                                                                           x[1][..., cb_idx, :]),
                                        arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_positions]); # pseudo_beta.shape = (seq_len, N_res, 3)
   if use_mask:
-    pseudo_beta_mask = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.cast(tf.where(tf.reshape(x[0], (-1,1)),
+    pseudo_beta_mask = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.cast(tf.where(x[0],
                                                                                          x[1][..., ca_idx],
                                                                                          x[1][..., cb_idx]), dtype = tf.float32),
                                               arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_masks]); # pseudo_beta_mask.shape = (seq_len, N_res)
