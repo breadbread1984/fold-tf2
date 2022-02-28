@@ -487,6 +487,7 @@ if __name__ == "__main__":
   prev_pair = np.random.normal(size = (20, 20, 128));
   residue_index = np.random.randint(low = 0, high = 10, size = (20,));
   extra_msa = np.random.randint(low = 0, high = 10, size = (4, 20));
+  extra_msa_mask = np.random.normal(size = (4, 20));
   extra_has_deletion = np.random.normal(size = (4, 20));
   extra_deletion_value = np.random.normal(size = (4, 20));
   single_activations, pair_activations, msa_activations, single_msa_activations = EmbeddingsAndEvoformer()([target_feat, msa_feat, msa_mask, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value]);
