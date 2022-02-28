@@ -348,9 +348,10 @@ def TemplateEmbedding(c_z):
   template_mask_results = tf.keras.layers.Lambda(lambda x: tf.cast(x[0], dtype = x[1].dtype))([template_mask, query_embedding]); # template_mask_results.shape = (N_template)
 '''
 
-def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64):
+def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384):
   target_feat = tf.keras.Input((None,), batch_size = N_res); # target_feat.shape = (N_res, None)
   msa_feat = tf.keras.Input((N_res, None), batch_size = N_seq); # msa_feat.shape = (N_seq, N_res, None)
+  msa_mask = tf.keras.Input((N_res,), batch_size = N_seq); # msa_mask.shape = (N_seq, N_res)
   seq_mask = tf.keras.Input((), batch_size = N_res); # seq_mask.shape = (N_res)
   aatype = tf.keras.Input((), batch_size = N_res); # aatype.shape = (N_res)
   prev_pos = tf.keras.Input((atom_type_num, 3), batch_size = N_res); # prev_pos.shape = (N_res, atom_type_num, 3)
@@ -361,10 +362,7 @@ def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_cha
   extra_msa_mask = tf.keras.Input((N_res,), batch_size = N_seq); # extra_msa_mask.shape = (N_seq, N_res)
   extra_has_deletion = tf.keras.Input((N_res,), batch_size = N_seq); # extra_has_deletion.shape = (N_seq, N_res)
   extra_deletion_value = tf.keras.Input((N_res,), batch_size = N_seq); # extra_deletion_value.shape = (N_seq, N_res)
-  template_aatype = tf.keras.Input((N_res,), batch_size = N_template); # template_aatype.shape = (N_template, N_res,)
-  template_all_atom_positions = tf.keras.Input((N_res, None, None), batch_size = N_template); # template_all_atom_positions.shape = (N_template, N_res, None, None)
-  template_all_atom_masks = tf.keras.Input((N_res, None), batch_size = N_template); # template_all_atom_masks.shape = (N_tepmlate, N_res, None)
-  template_mask = tf.keras.Input((), batch_size = N_template); # template_mask.shape = (N_template)
+
   preprocess_1d = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(target_feat); # preprocess_1d.shape = (N_res, msa_channel)
   preprocess_msa = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(msa_feat); # prreprocess_msa.shape = (N_seq, N_res, msa_channel)
   msa_activations = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0], axis = 0) + x[1])([preprocess_1d, preprocess_msa]); # msa_activations.shape = (N_seq, N_res, msa_channel)
@@ -388,13 +386,36 @@ def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_cha
   pair_activations = tf.keras.layers.Add()([pair_activations, rel_pos]); # pair_activations.shape = (N_res, N_res, pair_channel)
   if template_enabled:
     # TODO: will implement in the future
-    pass
+    pass;
   msa_1hot = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 23))(extra_msa); # msa_1hot.shape = (N_seq, N_res, 23)
   extra_msa_feat = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], tf.expand_dims(x[1], axis = -1), tf.expand_dims(x[2], axis = -1)], axis = -1))([msa_1hot, extra_has_deletion, extra_deletion_value]); # extra_msa_feat.shape = (N_seq, N_res, 25)
   extra_msa_activations = tf.keras.layers.Dense(extra_msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(extra_msa_feat); # extra_msa_activations.shape = (N_seq, N_res, extra_msa_channel)
+  # Embed extra MSA features
+  msa = extra_msa_activations;
+  pair = pair_activations;
+  for i in range(extra_msa_stack_num_block):
+    # msa.shape = (N_seq, N_res, extra_msa_channel)
+    # pair.shape = (N_seq, N_res, pair_channel)
+    msa, pair = EvoformerIteration(extra_msa_channel, pair_channel, is_extra_msa = True)([msa, pair, extra_msa_mask, mask_2d]);
+  pair_activations = pair; # pair_activations.shape = (N_seq, N_res, pair_channel)
+  if template_enabled:
+    # TODO: will implement in the future
+    pass;
+  # Embed MSA features
+  msa_act = msa_activations;
+  pair_act = pair_activations;
+  for i in range(evoformer_num_block):
+    # msa_act.shape = (N_seq, N_res, msa_channel)
+    # pair_act.shape = (N_seq, N_res, pair_channel)
+    msa_act, pair_act = EvoformerIteration(msa_channel, pair_channel, is_extra_msa = False)([msa_act, pair_act, msa_mask, mask_2d]);
+  msa_activations = msa; # msa_activations.shape = (N_seq, N_res, msa_channel)
+  pair_activations = pair; # pair_activations.shape = (N_seq, N_res, pair_channel)
   
-  return tf.keras.Model(inputs = (target_feat, msa_feat, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa_mask, template_aatype, template_all_atom_positions, template_all_atom_masks,),
-                        outputs = ());
+  single_msa_activations = tf.keras.layers.Lambda(lambda x: x[0])(msa_activations); # single_msa_activations.shape = (N_res, msa_channel)
+  single_activations = tf.keras.layers.Dense(seq_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(single_msa_activations); # single_activations.shape = (N_res, seq_channel)
+  
+  return tf.keras.Model(inputs = (target_feat, msa_feat, msa_mask, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value,),
+                        outputs = (single_activations, pair_activations, msa_activations, single_msa_activations));
 
 if __name__ == "__main__":
   import numpy as np;
