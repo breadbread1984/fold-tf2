@@ -260,17 +260,17 @@ def dgram_from_positions(min_bin, max_bin, num_bins = 39):
   return tf.keras.Model(inputs = positions, outputs = dgram);
 
 def pseudo_beta_fn(use_mask = False):
-  aatype = tf.keras.Input((None,)); # aatype.shape = (seq_len, N_res)
+  aatype = tf.keras.Input(()); # aatype.shape = (N_res)
   all_atom_positions = tf.keras.Input((atom_type_num, 3)); # all_atom_positions.shape = (N_res, atom_type_num, 3)
   if use_mask:
     all_atom_masks = tf.keras.Input((atom_type_num,)); # all_atom_masks.shape = (N_res, atom_type_num)
-  is_gly = tf.keras.layers.Lambda(lambda x, g: tf.math.equal(x, g), arguments = {'g': restype_order['G']})(aatype); # is_gly.shape = (seq_len, N_res)
-  pseudo_beta = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.where(tf.tile(tf.expand_dims(x[0], axis = -1), (1,1,3)),
+  is_gly = tf.keras.layers.Lambda(lambda x, g: tf.math.equal(x, g), arguments = {'g': restype_order['G']})(aatype); # is_gly.shape = (N_res)
+  pseudo_beta = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.where(tf.tile(tf.reshape(x[0], (-1,1,1)), (1,1,3)),
                                                                           x[1][..., ca_idx, :],
                                                                           x[1][..., cb_idx, :]),
                                        arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_positions]); # pseudo_beta.shape = (seq_len, N_res, 3)
   if use_mask:
-    pseudo_beta_mask = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.cast(tf.where(x[0],
+    pseudo_beta_mask = tf.keras.layers.Lambda(lambda x, ca_idx, cb_idx: tf.cast(tf.where(tf.reshape(x[0], (-1,1)),
                                                                                          x[1][..., ca_idx],
                                                                                          x[1][..., cb_idx]), dtype = tf.float32),
                                               arguments = {'ca_idx': atom_order['CA'], 'cb_idx': atom_order['CB']})([is_gly, all_atom_masks]); # pseudo_beta_mask.shape = (seq_len, N_res)
@@ -328,7 +328,7 @@ def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value
   pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
   return tf.keras.Model(inputs = (msa_act, pair_act, msa_mask, pair_mask), outputs = (msa_act_results, pair_act_results));
 
-def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_channel = 128):
+def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_channel = 128, recycle_pos = True):
   target_feat = tf.keras.Input((None,), batch_size = N_res); # target_feat.shape = (N_res, None)
   msa_feat = tf.keras.Input((N_res, None), batch_size = N_seq); # msa_feat.shape = (N_seq, N_res, None)
   seq_mask = tf.keras.Input((), batch_size = N_res); # seq_mask.shape = (N_res)
@@ -348,7 +348,8 @@ def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_cha
   right_single = tf.keras.layers.Dense(pair_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(target_feat); # right_single.shape = (N_res, pair_channel)
   pair_activations = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0], axis = 1) + tf.expand_dims(x[1], axis = 0))([left_single, right_single]); # pair_activations.shape = (N_res, N_res, pair_channel)
   mask_2d = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = 1) * tf.expand_dims(x, axis = 0))(seq_mask); # mask_2d.shape = (N_res, N_res)
-  
+  if recycle_pos:
+    prev_pseudo_beta = pseudo_beta_fn(use_mask = False)([aatype, prev_pos]); # prev_pseudo_beta.shape = (N_res, N_res, 3)
   return tf.keras.Model(inputs = (target_feat, msa_feat, seq_mask, aatype, prev_pos, prev_msa, prev_pair, residue_index, extra_msa_mask, template_aatype, template_all_atom_positions, template_all_atom_masks,),
                         outputs = ());
 
@@ -391,11 +392,11 @@ if __name__ == "__main__":
   results = dgram_from_positions(3.25, 50.75)(positions);
   print(results.shape);
   all_atom_positions = np.random.normal(size = (10, 37, 3));
-  aatype = np.random.normal(size = (50,10));
+  aatype = np.random.normal(size = (10,));
   all_atom_masks = np.random.randint(low = 0, high = 2, size = (10, 37));
-  pseudo_beta = pseudo_beta_fn()([all_atom_positions, aatype]);
+  pseudo_beta = pseudo_beta_fn()([aatype, all_atom_positions]);
   print(pseudo_beta.shape);
-  pseudo_beta, pseudo_beta_mask = pseudo_beta_fn(use_mask = True)([all_atom_positions, aatype, all_atom_masks]);
+  pseudo_beta, pseudo_beta_mask = pseudo_beta_fn(use_mask = True)([aatype, all_atom_positions, all_atom_masks]);
   print(pseudo_beta_mask.shape);
   msa_act = np.random.normal(size = (4, 20, 32));
   pair_act = np.random.normal(size = (20, 20, 64));
