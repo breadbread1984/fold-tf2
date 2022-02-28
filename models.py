@@ -336,7 +336,7 @@ def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_cha
   prev_pos = tf.keras.Input((atom_type_num, 3), batch_size = N_res); # prev_pos.shape = (N_res, atom_type_num, 3)
   prev_msa_first_row = tf.keras.Input((msa_channel,), batch_size = N_res); # prev_msa_first_row.shape = (N_res, msa_channel)
   prev_pair = tf.keras.Input((N_res, pair_channel), batch_size = N_res); # prev_pair.shape = (N_res, N_res, pair_channel)
-  residue_index = tf.keras.Input((), batch_size = N_res); # residue_index.shape = (N_res)
+  residue_index = tf.keras.Input((), batch_size = N_res, dtype = tf.int32); # residue_index.shape = (N_res)
   extra_msa_mask = tf.keras.Input((N_res,), batch_size = N_seq); # extra_msa_mask.shape = (N_seq, N_res)
   template_aatype = tf.keras.Input((N_res, None), batch_size = N_template); # template_aatype.shape = (N_template, N_res, None)
   template_all_atom_positions = tf.keras.Input((N_res, None, None), batch_size = N_template); # template_all_atom_positions.shape = (N_template, N_res, None, None)
@@ -359,7 +359,10 @@ def EmbeddingsAndEvoformer(N_seq, N_res, N_template, msa_channel = 256, pair_cha
   prev_pair_results = tf.keras.layers.LayerNormalization()(prev_pair); # prev_pair_results.shape = (N_res, N_res, pair_channel)
   pair_activations = tf.keras.layers.Add()([pair_activations, prev_pair_results]); # pair_activations.shape = (N_res, N_res, pair_channel)
   offset = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = 1) - tf.expand_dims(x, axis = 0))(residue_index); # offset.shape = (N_res, N_res)
-  rel_pos = 
+  rel_pos = tf.keras.layers.Lambda(lambda x, r: tf.one_hot(tf.clip_by_value(x + r, 0, 2 * r), 2 * r + 1), arguments = {'r': max_relative_feature})(offset); # rel_pos.shape = (N_res, N_res, 2 * max_relative_feature + 1)
+  rel_pos = tf.keras.layers.Dense(pair_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(rel_pos); # rel_pos.shape = (N_res, N_res, pair_channel)
+  pair_activations = tf.keras.layers.Add()([pair_activations, rel_pos]); # pair_activations.shape = (N_res, N_res, pair_channel)
+  
   return tf.keras.Model(inputs = (target_feat, msa_feat, seq_mask, aatype, prev_pos, prev_msa, prev_pair, residue_index, extra_msa_mask, template_aatype, template_all_atom_positions, template_all_atom_masks,),
                         outputs = ());
 
