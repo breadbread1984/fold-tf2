@@ -328,25 +328,52 @@ def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value
   pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
   return tf.keras.Model(inputs = (msa_act, pair_act, msa_mask, pair_mask), outputs = (msa_act_results, pair_act_results));
 
-'''
+def make_canonical_transform():
+  n_xyz = tf.keras.Input((3,)); # n_xyz.shape = (batch, 3)
+  ca_xyz = tf.keras.Input((3,)); # ca_xyz.shape = (batch, 3)
+  c_xyz = tf.keras.Input((3,)); # c_xyz.shape = (batch, 3)
+  n_xyz_results = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([n_xyz, ca_xyz]); # n_xyz_results.shape = (batch, 3)
+  c_xyz_results = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([c_xyz, ca_xyz]); # c_xyz_results.shape = (batch, 3)
+  sin_c1 = tf.keras.layers.Lambda(lambda x: -x[:,1] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1])))(c_xyz); # sin_c1.shape = (batch)
+  cos_c1 = tf.keras.layers.Lambda(lambda x: -x[:,0] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1])))(c_xyz); # cos_c1.shape = (batch)
+  c1_rot_matrix = tf.keras.layers.Lambda(lambda x: tf.stack([tf.stack([x[1], -x[0], tf.zeros_like(x[0])], axis = -1),
+                                                             tf.stack([x[0], x[1], tf.zeros_like(x[0])], axis = -1),
+                                                             tf.stack([tf.zeros_like(x[0]), tf.zeros_like(x[0]), tf.ones_like(x[0])], axis = -1)], axis = -2))([sin_c1, cos_c1]); # c1_rot_matrix.shape = (batch, 3, 3)
+  sin_c2 = tf.keras.layers.Lambda(lambda x: x[:,2] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1]) + tf.math.square(x[:,2])))(c_xyz); # sin_c2.shape = (batch)
+  cos_c2 = tf.keras.layers.Lambda(lambda x: tf.math.sqrt(tf.math.square(x[:,0]) + tf.math.square(x[:,1])) / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1]) + tf.math.square(x[:,2])))(c_xyz); # cos_c2.shape = (batch)
+  c2_rot_matrix = tf.keras.layers.Lambda(lambda x: tf.stack([tf.stack([x[1], tf.zeros_like(x[0]), x[0]], axis = -1),
+                                                             tf.stack([tf.zeros_like(x[0]), tf.ones_like(x[0]), tf.zeros_like(x[0])], axis = -1),
+                                                             tf.stack([-x[0], tf.zeros_like(x[0]), x[1]], axis = -1)], axis = -2))([sin_c2, cos_c2]); # c2_rot_matrix.shape = (batch, 3, 3)
+  c_rot_matrix = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([c2_rot_matrix, c1_rot_matrix]); # c_rot_matrix.shape = (batch, 3, 3)
+  
+
 def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
   template_aatype = tf.keras.Input((None,)); # template_aatype.shape = (N_template, N_res,)
+  template_all_atom_positions = tf.keras.Input((None, None, None)); # template_all_atom_positions.shape = (N_template, N_Res, None, None)
   template_pseudo_beta_mask = tf.keras.Input((None,)); # template_pseudo_beta_mask.shape = (N_template, N_res)
   template_mask = tf.keras.Input(()); # template_mask.shape = (N_template)
-  template_seudo_beta = tf.keras.Input((None, None,)); # template_seudo_beta.shape = (N_template, N_res, None)
-  template_seudo_beta_mask = tf.keras.Input((None,)); # template_seudo_beta_mask.shape = (N_template, N_res)
-  template_mask_2d = tf.keras.layers.Lambda(lambda x: tf.cast(tf.expand_dims(x[0], axis = -1) * tf.expand_dims(x[0], axis = 0), dtype = x[1].dtype))([template_pseudo_beta_mask, query_embedding]); # template_mask_2d.shape = (N_template, N_template)
-  template_dgram = dgram_from_positions(min_bin, max_bin, num_bins, use_3d = True)(template_seudo_beta); # template_dgram.shape = (N_template, N_res, N_res, num_bins)
+  template_pseudo_beta = tf.keras.Input((None, None,)); # template_seudo_beta.shape = (N_template, N_res, None)
+  template_pseudo_beta_mask = tf.keras.Input((None,)); # template_seudo_beta_mask.shape = (N_template, N_res)
+  template_mask_2d = tf.keras.layers.Lambda(lambda x: tf.expand_dims(tf.cast(tf.expand_dims(x[0], axis = 1) * tf.expand_dims(x[0], axis = 0), dtype = x[1].dtype), axis = -1))([template_pseudo_beta_mask, query_embedding]); # template_mask_2d.shape = (N_template, N_template, N_res, 1)
+  template_dgram = dgram_from_positions(min_bin, max_bin, num_bins, use_3d = True)(template_pseudo_beta); # template_dgram.shape = (N_template, N_res, N_res, num_bins)
   template_dgram = tf.keras.layers.Lambda(lambda x: tf.cast(x[0], dtype = x[1].dtype))([template_dgram, query_embedding]); # template_dgram.shape = (N_template, N_res, N_res, num_bins)
+  to_concat = [template_dgram, template_mask_2d];
   aatype = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 22))(template_aatype); # aatype.shape = (N_template, N_res, 22)
+  aatype_tile0 = tf.keras.layers.Lambda(lambda x: tf.tile(tf.expand_dims(x[0], axis = 0), (tf.shape(x[1])[0],1,1)))([aatype, template_aatype]); # aatype_tile0.shape = (N_template, N_template, N_res, 22)
+  aatype_tile1 = tf.keras.layers.Lambda(lambda x: tf.tile(tf.expand_dims(x[0], axis = 1), (1,tf.shape(x[1])[0],1)))([aatype, template_aatype]); # aatype_tile1.shape = (N_template, N_template, N_res, 22)
+  to_concat.append(aatype_tile0);
+  to_concat.append(aatype_tile1);
+  n_xyz = residue_constants.atom_order['N'];
+  ca_xyz = residue_constants.atom_order['CA'];
+  c_xyz = residue_constants.atom_order['C'];
   
+
 def TemplateEmbedding(c_z):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
   template_mask = tf.keras.Input(()); # template_mask.shape = (N_template)
   mask_2d = tf.keras.Input((None,)); # mask_2d.shape = (N_res, N_res)
   template_mask_results = tf.keras.layers.Lambda(lambda x: tf.cast(x[0], dtype = x[1].dtype))([template_mask, query_embedding]); # template_mask_results.shape = (N_template)
-'''
 
 def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384):
   target_feat = tf.keras.Input((c_m,)); # target_feat.shape = (N_res, c_m)
@@ -416,6 +443,10 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   msa = tf.keras.layers.Lambda(lambda x: x[0][:tf.shape(x[1])[0],:,:])([msa_activations, msa_feat]); # msa.shape = (N_seq, N_res, msa_channel)
   return tf.keras.Model(inputs = (target_feat, msa_feat, msa_mask, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value,),
                         outputs = (single_activations, pair_activations, msa, single_msa_activations));
+
+def AlphaFoldIteration():
+  seq_length = tf.keras.Input();
+  
 
 if __name__ == "__main__":
   import numpy as np;
