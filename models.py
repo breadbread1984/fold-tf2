@@ -355,6 +355,20 @@ def make_canonical_transform():
   translation = tf.keras.layers.Lambda(lambda x: -x)(ca_xyz); # translation.shape = (batch, 3)
   return tf.keras.Model(inputs = (n_xyz, ca_xyz, c_xyz), outputs = (translation, rot_matrix));
 
+def rot_to_quat(unstack_inputs = False):
+  if unstack_inputs:
+    rot = tf.keras.Input((atom_type_num, 3, 3)); # rot.shape = (N_template, atom_type_num, 3, 3)
+    rot_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rot); # rot_results.shape = (3, 3, N_template, atom_type_num)
+  else:
+    rot = tf.keras.Input((3, None, atom_type_num)); # rot.shape = (3, 3, N_template, atom_type_num)
+  k = tf.keras.layers.Lambda(lambda x: 1/3 * tf.stack([tf.stack([x[0,0] + x[1,1] + x[2,2], x[2,1] - x[1,2], x[0,2] - x[2,0], x[1,0] - x[0,1]], axis = -1),
+                                                       tf.stack([x[2,1] - x[1,2], x[0,0] - x[1,1] - x[2,2], x[0,1] + x[1,0], x[0,2] + x[2,0]], axis = -1),
+                                                       tf.stack([x[0,2] - x[2,0], x[0,1] + x[1,0], x[1,1] - x[0,0] - x[2,2], x[1,2] + x[2,1]], axis = -1),
+                                                       tf.stack([x[1,0] - x[0,1], x[0,2] + x[2,0], x[1,2] + x[2,1], x[2,2] - x[0,0] - x[1,1]], axis = -1)], axis = -2))(rot); # x.shape = (N_template, atom_type_num, 4, 4)
+  qs = tf.keras.layers.Lambda(lambda x: tf.linalg.eigh(x)[1])(k); # qs.shape = (N_template, atom_type_num, 4, 4)
+  qs = tf.keras.layers.Lambda(lambda x: x[...,-1])(qs); # qs.shape = (N_template, atom_type_num, 4)
+  return tf.keras.Model(inputs = rot, outputs = qs);
+
 def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
   template_aatype = tf.keras.Input((None,)); # template_aatype.shape = (N_template, N_res,)
