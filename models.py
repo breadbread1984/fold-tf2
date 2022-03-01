@@ -358,7 +358,7 @@ def make_canonical_transform():
 def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
   template_aatype = tf.keras.Input((None,)); # template_aatype.shape = (N_template, N_res,)
-  template_all_atom_positions = tf.keras.Input((None, None, 3)); # template_all_atom_positions.shape = (N_template, N_Res, None, 3)
+  template_all_atom_positions = tf.keras.Input((None, atom_type_num, 3)); # template_all_atom_positions.shape = (N_template, N_res, atom_type_num, 3)
   template_pseudo_beta_mask = tf.keras.Input((None,)); # template_pseudo_beta_mask.shape = (N_template, N_res)
   template_mask = tf.keras.Input(()); # template_mask.shape = (N_template)
   template_pseudo_beta = tf.keras.Input((None, None,)); # template_seudo_beta.shape = (N_template, N_res, None)
@@ -372,13 +372,13 @@ def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39)
   aatype_tile1 = tf.keras.layers.Lambda(lambda x: tf.tile(tf.expand_dims(x[0], axis = 1), (1,tf.shape(x[1])[0],1)))([aatype, template_aatype]); # aatype_tile1.shape = (N_template, N_template, N_res, 22)
   to_concat.append(aatype_tile0);
   to_concat.append(aatype_tile1);
-  n_xyz = tf.keras.layers.Lambda(lambda x, n: tf.reshape(x[:,n], (-1, 3)), arguments = {'n': residue_constants.atom_order['N']})(template_all_atom_positions); # n_xyz.shape = (N_template * None, 3)
-  ca_xyz = tf.keras.layers.Lambda(lambda x, n: tf.reshape(x[:,n], (-1, 3)), arguments = {'n': residue_constants.atom_order['CA']})(template_all_atom_positions); # ca_xyz.shape = (N_template * None, 3)
-  c_xyz = tf.keras.layers.Lambda(lambda x, n: tf.reshape(x[:,n], (-1, 3)), arguments = {'n': residue_constants.atom_order['C']})(template_all_atom_positions); # c_xyz.shape = (N_template * None, 3)
-  translation, rot_matrix = make_canonical_transform()([n_xyz, ca_xyz, c_xyz]); # translation.shape = (N_template * None, 3) rot_matrix.shape = (N_template * none, 3, 3)
+  n_xyz = tf.keras.layers.Lambda(lambda x, n: tf.reshape(x[:,n], (-1, 3)), arguments = {'n': residue_constants.atom_order['N']})(template_all_atom_positions); # n_xyz.shape = (N_template * atom_type_num, 3)
+  ca_xyz = tf.keras.layers.Lambda(lambda x, n: tf.reshape(x[:,n], (-1, 3)), arguments = {'n': residue_constants.atom_order['CA']})(template_all_atom_positions); # ca_xyz.shape = (N_template * atom_type_num, 3)
+  c_xyz = tf.keras.layers.Lambda(lambda x, n: tf.reshape(x[:,n], (-1, 3)), arguments = {'n': residue_constants.atom_order['C']})(template_all_atom_positions); # c_xyz.shape = (N_template * atom_type_num, 3)
+  translation, rot_matrix = make_canonical_transform()([n_xyz, ca_xyz, c_xyz]); # translation.shape = (N_template * atom_type_num, 3) rot_matrix.shape = (N_template * atom_type_num, 3, 3)
   # INFO: get inverse transformation (rotation, translation)
-  trans = tf.keras.layers.Lambda(lambda x: tf.reshape(-x[0], (tf.shape(x[1])[0], -1, 3)))([translation, template_all_atom_positions]); # trans.shape = (N_template, None, 3)
-  rot = tf.keras.layers.Lambda(lambda x: tf.reshape(tf.transpose(x[0], (0, 2, 1)), (tf.shape(x[1])[0], -1, 3, 3)))(rot_matrix); # rot.shape = (N_template, None, 3, 3)
+  trans = tf.keras.layers.Lambda(lambda x, n: tf.reshape(-x, (-1, n, 3)), arguments = {'n': atom_type_num})(translation); # trans.shape = (N_template, atom_type_num, 3)
+  rot = tf.keras.layers.Lambda(lambda x, n: tf.reshape(tf.transpose(x, (0, 2, 1)), (-1, n, 3, 3)), arguments = {'n': atom_type_num})(rot_matrix); # rot.shape = (N_template, atom_type_num, 3, 3)
   
 
 def TemplateEmbedding(c_z):
