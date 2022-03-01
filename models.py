@@ -366,6 +366,7 @@ def rot_to_quat(unstack_inputs = False):
                                                        tf.stack([x[0,2] - x[2,0], x[0,1] + x[1,0], x[1,1] - x[0,0] - x[2,2], x[1,2] + x[2,1]], axis = -1),
                                                        tf.stack([x[1,0] - x[0,1], x[0,2] + x[2,0], x[1,2] + x[2,1], x[2,2] - x[0,0] - x[1,1]], axis = -1)], axis = -2))(rot); # x.shape = (N_template, atom_type_num, 4, 4)
   qs = tf.keras.layers.Lambda(lambda x: tf.linalg.eigh(x)[1])(k); # qs.shape = (N_template, atom_type_num, 4, 4)
+  # NOTE: return the eigvector of the biggest eigvalue
   qs = tf.keras.layers.Lambda(lambda x: x[...,-1])(qs); # qs.shape = (N_template, atom_type_num, 4)
   return tf.keras.Model(inputs = rot, outputs = qs);
 
@@ -393,7 +394,7 @@ def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39)
   # INFO: get inverse transformation (rotation, translation)
   trans = tf.keras.layers.Lambda(lambda x, n: tf.reshape(-x, (-1, n, 3)), arguments = {'n': atom_type_num})(translation); # trans.shape = (N_template, atom_type_num, 3)
   rot = tf.keras.layers.Lambda(lambda x, n: tf.reshape(tf.transpose(x, (0, 2, 1)), (-1, n, 3, 3)), arguments = {'n': atom_type_num})(rot_matrix); # rot.shape = (N_template, atom_type_num, 3, 3)
-  
+  quaternion = rot_to_quat(unstack_inputs = True)(rot); # quaternion.shape = (N_template, atom_type_num, 4)
 
 def TemplateEmbedding(c_z):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
