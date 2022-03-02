@@ -607,8 +607,12 @@ if __name__ == "__main__":
   quat = np.random.normal(size = (4, atom_type_num, 4)); #N_template, atom_type_num, 4
   rot = quat_to_rot()(quat);
   print(rot.shape);
+  rotation = np.random.normal(size = (4, atom_type_num, 3, 3));
+  translation = np.random.normal(size = (4, atom_type_num, 3));
+  points = np.random.normal(size = (3,4,1,atom_type_num));
+  results = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, points]);
+  print(results.shape);
   rotation = np.random.normal(size = (3, 3, 4, atom_type_num));
   translation = np.random.normal(size = (3, 4, atom_type_num));
-  points = np.random.normal(size = (3,4,1,atom_type_num));
-  results = invert_point(unstack_inputs = True, extra_dims = 1)(rotation, translation, points);
+  results = invert_point(unstack_inputs = False, extra_dims = 1)([rotation, translation, points]);
   print(results.shape);
