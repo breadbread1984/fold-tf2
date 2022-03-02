@@ -361,14 +361,22 @@ def rot_to_quat(unstack_inputs = False):
     rot_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rot); # rot_results.shape = (3, 3, N_template, atom_type_num)
   else:
     rot = tf.keras.Input((3, None, atom_type_num)); # rot.shape = (3, 3, N_template, atom_type_num)
+    rot_results = rot;
   k = tf.keras.layers.Lambda(lambda x: 1/3 * tf.stack([tf.stack([x[0,0] + x[1,1] + x[2,2], x[2,1] - x[1,2], x[0,2] - x[2,0], x[1,0] - x[0,1]], axis = -1),
                                                        tf.stack([x[2,1] - x[1,2], x[0,0] - x[1,1] - x[2,2], x[0,1] + x[1,0], x[0,2] + x[2,0]], axis = -1),
                                                        tf.stack([x[0,2] - x[2,0], x[0,1] + x[1,0], x[1,1] - x[0,0] - x[2,2], x[1,2] + x[2,1]], axis = -1),
-                                                       tf.stack([x[1,0] - x[0,1], x[0,2] + x[2,0], x[1,2] + x[2,1], x[2,2] - x[0,0] - x[1,1]], axis = -1)], axis = -2))(rot); # x.shape = (N_template, atom_type_num, 4, 4)
+                                                       tf.stack([x[1,0] - x[0,1], x[0,2] + x[2,0], x[1,2] + x[2,1], x[2,2] - x[0,0] - x[1,1]], axis = -1)], axis = -2))(rot_results); # x.shape = (N_template, atom_type_num, 4, 4)
   qs = tf.keras.layers.Lambda(lambda x: tf.linalg.eigh(x)[1])(k); # qs.shape = (N_template, atom_type_num, 4, 4)
   # NOTE: return the eigvector of the biggest eigvalue
   qs = tf.keras.layers.Lambda(lambda x: x[...,-1])(qs); # qs.shape = (N_template, atom_type_num, 4)
   return tf.keras.Model(inputs = rot, outputs = qs);
+
+def quat_to_rot():
+  normalized_quat = tf.keras.Input(());
+  QUAT_TO_ROT = tf.keras.layers.Lambda(lambda x: tf.stack([tf.stack([[[1,0,0],[0,1,0],[0,0,1]], [[0,0,0],[0,0,-2],[0,2,0]], [[0,0,2],[0,0,0],[-2,0,0]],[[0,-2,0],[2,0,0],[0,0,0]]], axis = 0),
+                                                           tf.stack([[[0,0,0],[0,0,0],[0,0,0]], [], [], []], axis = 0),
+                                                           tf.stack([[],[],[],[]], axis = 0),
+                                                           tf.stack([[],[],[],[]], axis = 0),], axis = 0))(normalized_quat);
 
 def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
@@ -559,3 +567,9 @@ if __name__ == "__main__":
   c_xyz = np.random.normal(size = (10,3));
   translation, rot_matrix = make_canonical_transform()([n_xyz, ca_xyz, c_xyz]);
   print(translation.shape, rot_matrix.shape);
+  rot = np.random.normal(size = (4, atom_type_num, 3, 3));
+  quat = rot_to_quat(True)(rot);
+  print(quat.shape);
+  rot = np.random.normal(size = (3, 3, 4, atom_type_num));
+  quat = rot_to_quat(False)(rot);
+  print(quat.shape);
