@@ -386,32 +386,24 @@ def quat_to_rot():
   rot = tf.keras.layers.Lambda(lambda x: tf.reshape(tf.transpose(x, (2, 0, 1)), (3,3,tf.shape(x)[0],tf.shape(x)[1])))(rot_tensor); # rot.shape = (3, 3, N_template, atom_type_num)
   return tf.keras.Model(inputs = normalized_quat, outputs = rot);
 
-def QuatAffine(unstack_inputs = False, use_quaternion = True, use_rotation = False, normalize = True):
-  inputs = list();
-  if use_quaternion:
-    quaternion = tf.keras.Input((atom_type_num, 4)); # quaternion.shape = (N_template, atom_type_num, 4)
-    inputs.append(quaternion);
-    quaternion_results = quaternion;
+def invert_point(unstack_inputs = False, extra_dims = 0):
   if unstack_inputs:
+    rotation = tf.keras.Input((atom_type_num, 3, 3)); # rotation.shape = (N_template, atom_type_num, 3, 3)
     translation = tf.keras.Input((atom_type_num, 3)); # translation.shape = (N_template, atom_type_num, 3)
-    inputs.append(translation);
-    if use_rotation:
-      rotation = tf.keras.Input((atom_type_num, 3, 3)); # rotation.shape = (N_template, atom_type_num, 3, 3)
-      inputs.append(rotation);
-      rotation_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rotation); # rotation_results.shape = (3, 3, N_template, atom_type_num)
-    translation_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,0,1)))(translation); # translation_results.shape = (3, N_template, atom_type)
+    rotation_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rotation); # rotation_results.shape = (3,3,N_template, atom_type_num)
+    translation_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,0,1)))(translation); # translation_results.shape = (3, N_template, atom_type_num)
   else:
-    translation = tf.keras.Input((None, atom_type_num)); # translation.shape = (3, N_template, atom_type_num)
-    inputs.append(translation);
-    if use_rotation:
-      rotation = tf.keras.Input((3, None, atom_type_num)); # rotation.shape = (3, 3, N_template, atom_type_num)
-      inputs.append(rotation);
-      rotation_results = rotation;
+    rotation = tf.keras.Input((3, None, atom_type_num), batch_size = 3); # rotation.shape = (3, 3, N_template, atom_type_num)
+    translation = tf.keras.Input((None, atom_type_num), batch_size = 3); # translation.shape = (3, N_template, atom_type_num)
+    rotation_results = rotation;
     translation_results = translation;
-  if normalize and use_quaternion:
-    quaternion_results = tf.keras.layers.Lambda(lambda x: x / tf.norm(x, axis = -1, keepdims = True))(quaternion_results); # quaternion_results.shape = (N_template, atom_type_num, 4)
-  if use_rotation == False:
-    rotation_results = quat_to_rot()(quaternion_results); # rotation_results.shape = ()
+  transformed_points = tf.keras.Input((None, 1, atom_type_num), batch_size = 3); # points.shape = (3, N_template, 1, atom_type_num)
+  for _ in range(extra_dims):
+    rotation_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(rotation_results); # rotation_results.shape = (3, 3, N_template, atom_type_num, 1)
+    translation_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(translation_results); # translation_results.shape = (3, N_template, atom_type_num, 1)
+  rot_point = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([transformed_points, translation_results]); # rot_point.shape = (3, N_template, atom_type_num, atom_type_num)
+  results = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], x[1], transpose_a = True), axis = -1))([rot_point, translation_results]); # results.shape = (3, N_template, atom_type_num)
+  return tf.keras.Model(inputs = (rotation, translation, transformed_points), outputs = results);
 
 def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
@@ -438,6 +430,10 @@ def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39)
   trans = tf.keras.layers.Lambda(lambda x, n: tf.reshape(-x, (-1, n, 3)), arguments = {'n': atom_type_num})(translation); # trans.shape = (N_template, atom_type_num, 3)
   rot = tf.keras.layers.Lambda(lambda x, n: tf.reshape(tf.transpose(x, (0, 2, 1)), (-1, n, 3, 3)), arguments = {'n': atom_type_num})(rot_matrix); # rot.shape = (N_template, atom_type_num, 3, 3)
   quaternion = rot_to_quat(unstack_inputs = True)(rot); # quaternion.shape = (N_template, atom_type_num, 4)
+  translation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,0,1)))(trans); # translation.shape = (3, N_template, atom_type_num)
+  rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rot); # rotation.shape = (3,3,N_template, atom_type_num)
+  points = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -2))(translation); # points.shape = (3, N_template, 1, atom_type_num)
+  affine_vec = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, points]); # affine_vec.shape = (3, N_template, atom_type_num)
 
 def TemplateEmbedding(c_z):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
@@ -611,3 +607,8 @@ if __name__ == "__main__":
   quat = np.random.normal(size = (4, atom_type_num, 4)); #N_template, atom_type_num, 4
   rot = quat_to_rot()(quat);
   print(rot.shape);
+  rotation = np.random.normal(size = (3, 3, 4, atom_type_num));
+  translation = np.random.normal(size = (3, 4, atom_type_num));
+  points = np.random.normal(size = (3,4,1,atom_type_num));
+  results = invert_point(unstack_inputs = True, extra_dims = 1)(rotation, translation, points);
+  print(results.shape);
