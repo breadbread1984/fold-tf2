@@ -632,7 +632,7 @@ if __name__ == "__main__":
   print(msa_act.shape, pair_act.shape);
   msa_act, pair_act = EvoformerIteration(32, 64, True, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
-  
+  '''
   target_feat = np.random.normal(size = (20, 22));
   msa_feat = np.random.normal(size = (4, 20, 25));
   msa_mask = np.random.normal(size = (4, 20));
@@ -650,7 +650,7 @@ if __name__ == "__main__":
   print(single_activations.shape);
   print(pair_activations.shape);
   print(msa_activations.shape);
-  
+  '''
   n_xyz = np.random.normal(size = (10,3));
   ca_xyz = np.random.normal(size = (10,3));
   c_xyz = np.random.normal(size = (10,3));
@@ -668,9 +668,9 @@ if __name__ == "__main__":
   rotation = np.random.normal(size = (4, 3, 3));
   translation = np.random.normal(size = (4, 3));
   points = np.random.normal(size = (3,1,4));
-  results = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, points]);
+  results = invert_point(unstack_inputs = False, extra_dims = 1)([rotation, translation, points]);
   print(results.shape);
   rotation = np.random.normal(size = (3, 3, 4));
   translation = np.random.normal(size = (3, 4));
-  results = invert_point(unstack_inputs = False, extra_dims = 1)([rotation, translation, points]);
+  results = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, points]);
   print(results.shape);
