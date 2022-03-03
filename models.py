@@ -163,9 +163,6 @@ def TriangleAttention(c_z, num_head = 4, orientation = 'per_column', **kwargs):
   if orientation == 'per_column':
     pair_act = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(pair_act); # pair_act.shape = (N_res, N_res, c_z)
     pair_mask = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(pair_mask); # pair_mask.shape = (N_res, N_res)
-  else:
-    pair_act = pair_act;
-    pair_mask = pair_mask;
   bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(pair_mask); # bias.shape = (N_seq, 1, 1, N_res) if per_row else (N_res, 1, 1, N_seq)
   pair_act = tf.keras.layers.LayerNormalization()(pair_act); # pair_act.shape = (N_res, N_res, c_z)
   nonbatched_bias = tf.keras.layers.Dense(num_head, use_bias = False, kernel_initializer = tf.keras.initializers.RandomNormal(stddev = 1./np.sqrt(c_z)))(pair_act); # nonbatched_bias.shape = (N_res, N_res, num_head)
@@ -526,8 +523,48 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   return tf.keras.Model(inputs = inputs,
                         outputs = (single_activations, pair_activations, msa, single_msa_activations));
 
-def AlphaFoldIteration():
-  seq_length = tf.keras.Input();
+def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384):
+  target_feat = tf.keras.Input((None, c_m,), batch_siz = num_ensemble); # target_feat.shape = (batch, N_res, c_m)
+  msa_feat = tf.keras.Input((None, None, c_z), batch_siz = num_ensemble); # msa_feat.shape = (batch, N_seq, N_res, c_z)
+  msa_mask = tf.keras.Input((None, None,), batch_siz = num_ensemble); # msa_mask.shape = (batch, N_seq, N_res)
+  seq_mask = tf.keras.Input((None,), batch_siz = num_ensemble); # seq_mask.shape = (batch, N_res)
+  aatype = tf.keras.Input((None,), batch_siz = num_ensemble); # aatype.shape = (batch, N_res)
+  prev_pos = tf.keras.Input((None, atom_type_num, 3), batch_siz = num_ensemble); # prev_pos.shape = (batch, N_res, atom_type_num, 3)
+  prev_msa_first_row = tf.keras.Input((None, msa_channel,), batch_siz = num_ensemble); # prev_msa_first_row.shape = (batch, N_res, msa_channel)
+  prev_pair = tf.keras.Input((None, None, pair_channel), batch_siz = num_ensemble); # prev_pair.shape = (batch, N_res, N_res, pair_channel)
+  residue_index = tf.keras.Input((None,), dtype = tf.int32, batch_siz = num_ensemble); # residue_index.shape = (batch, N_res)
+  extra_msa = tf.keras.Input((None, None,), dtype = tf.int32, batch_siz = num_ensemble); # extra_msa.shape = (batch, N_seq, N_res)
+  extra_msa_mask = tf.keras.Input((None, None,), batch_siz = num_ensemble); # extra_msa_mask.shape = (batch, N_seq, N_res)
+  extra_has_deletion = tf.keras.Input((None, None,), batch_siz = num_ensemble); # extra_has_deletion.shape = (batch, N_seq, N_res)
+  extra_deletion_value = tf.keras.Input((None, None,), batch_siz = num_ensemble); # extra_deletion_value.shape = (batch, N_seq, N_res)
+  seq_length = tf.keras.Input((None,), batch_siz = num_ensemble); # seq_length.shape = (batch, N_res,)
+  inputs = (target_feat, msa_feat, msa_mask, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, seq_length);
+  embeddings_and_evoformer = EmbeddingsAndEvoformer(c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins, recycle_features, max_relative_feature, template_enabled, extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel);
+  # iteration 0
+  def slice_batch(inputs, n):
+    outputs = list();
+    for _input in inputs:
+      output = tf.keras.layers.Lambda(lambda x, i: x[i], arguments = {'i': n})(_input);
+      outputs.append(output);
+    return tuple(outputs);
+  batch0_inputs = slice_batch([target_feat, msa_feat, msa_mask, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value], 0);
+  representation_update = embeddings_and_evoformer(batch0_inputs);
+  msa_representation = representation_update[2];
+  # iteration 1 to num_ensemble
+  for i in range(1, num_ensemble):
+    representation_current = representation_update;
+    batchi_inputs = slice_batch([target_feat, msa_feat, msa_mask, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value], i);
+    representation = embeddings_and_evoformer(batchi_inputs);
+    representation_update = list();
+    for current, update in zip(representation_current, representation):
+      rep = tf.keras.layers.Add()([current, update]);
+      representation_update.append(rep);
+  # average on batch
+  single_activations, pair_activations, msa, single_msa_activations = representation_update;
+  single_activations = tf.keras.layers.Lambda(lambda x, b: x / b, arguments = {'b': num_ensemble})(single_activations);
+  pair_activations = tf.keras.layers.Lambda(lambda x, b: x / b, arguments = {'b': num_ensemble})(pair_activations);
+  msa = msa_representation;
+  single_msa_activations = tf.keras.layers.Lambda(lambda x, b: x / b, arguments = {'b': num_ensemble})(single_msa_activations);
   
 
 if __name__ == "__main__":
@@ -590,7 +627,7 @@ if __name__ == "__main__":
   print(msa_act.shape, pair_act.shape);
   msa_act, pair_act = EvoformerIteration(32, 64, True, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
-  '''
+  
   target_feat = np.random.normal(size = (20, 22));
   msa_feat = np.random.normal(size = (4, 20, 25));
   msa_mask = np.random.normal(size = (4, 20));
@@ -608,7 +645,7 @@ if __name__ == "__main__":
   print(single_activations.shape);
   print(pair_activations.shape);
   print(msa_activations.shape);
-  '''
+  
   n_xyz = np.random.normal(size = (10,3));
   ca_xyz = np.random.normal(size = (10,3));
   c_xyz = np.random.normal(size = (10,3));
