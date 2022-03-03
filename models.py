@@ -337,7 +337,7 @@ def make_canonical_transform():
   n_xyz = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([n_xyz, ca_xyz]); # n_xyz.shape = (batch, 3)
   c_xyz = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([c_xyz, ca_xyz]); # c_xyz.shape = (batch, 3)
   sin_c1 = tf.keras.layers.Lambda(lambda x: -x[:,1] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1])))(c_xyz); # sin_c1.shape = (batch)
-  cos_c1 = tf.keras.layers.Lambda(lambda x: -x[:,0] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1])))(c_xyz); # cos_c1.shape = (batch)
+  cos_c1 = tf.keras.layers.Lambda(lambda x: x[:,0] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1])))(c_xyz); # cos_c1.shape = (batch)
   c1_rot_matrix = tf.keras.layers.Lambda(lambda x: tf.stack([tf.stack([x[1], -x[0], tf.zeros_like(x[0])], axis = -1),
                                                              tf.stack([x[0], x[1], tf.zeros_like(x[0])], axis = -1),
                                                              tf.stack([tf.zeros_like(x[0]), tf.zeros_like(x[0]), tf.ones_like(x[0])], axis = -1)], axis = -2))([sin_c1, cos_c1]); # c1_rot_matrix.shape = (batch, 3, 3)
