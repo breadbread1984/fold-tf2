@@ -7,35 +7,35 @@ from residue_constants import restype_order, atom_order, atom_type_num;
 def TemplatePairStack(c_t, num_head = 4, num_intermediate_channel = 64, num_block = 2, rate = 0.25, **kwargs):
   pair_act = tf.keras.Input((None, c_t)); # pair_act.shape = (N_res, N_res, c_t)
   pair_mask = tf.keras.Input((None, )); # pair_mask.shape = (N_res, N_res)
-  pair_act_results = pair_act;
-  pair_mask_results = pair_mask;
+  inputs = (pair_act, pair_mask);
   for i in range(num_block):
     # triangle_attention_starting_node
-    residual = TriangleAttention(c_t, num_head = num_head, orientation = 'per_row', name = 'block%d/triangle_attention_starting_node' % i)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
-    residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': rate})(residual); # pair_act_results.shape = (N_res, N_res, c_t)
-    pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]);
+    residual = TriangleAttention(c_t, num_head = num_head, orientation = 'per_row', name = 'block%d/triangle_attention_starting_node' % i)([pair_act, pair_mask]); # pair_act.shape = (N_res, N_res, c_t)
+    residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': rate})(residual); # pair_act.shape = (N_res, N_res, c_t)
+    pair_act = tf.keras.layers.Add()([pair_act, residual]);
     # triangle_attention_ending_node
-    residual = TriangleAttention(c_t, num_head = num_head, orientation = 'per_column', name = 'block%d/triangle_attention_ending_node' % i)([pair_act_results, pair_mask_results]); # pair_act_results.shape = (N_res, N_res, c_t)
-    residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])), arguments = {'r': rate})(residual); # pair_act_results.shape = (N_res, N_res, c_t)
-    pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]);
+    residual = TriangleAttention(c_t, num_head = num_head, orientation = 'per_column', name = 'block%d/triangle_attention_ending_node' % i)([pair_act, pair_mask]); # pair_act.shape = (N_res, N_res, c_t)
+    residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])), arguments = {'r': rate})(residual); # pair_act.shape = (N_res, N_res, c_t)
+    pair_act = tf.keras.layers.Add()([pair_act, residual]);
     # triangle_multiplication_outgoing
-    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'outgoing', name = 'block%d/triangle_multiplication_outgoing' % i)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_t)
+    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'outgoing', name = 'block%d/triangle_multiplication_outgoing' % i)([pair_act, pair_mask]); # residual.shape = (N_res, N_res, c_t)
     residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': rate})(residual); # residual.shape = (N_res, N_res, c_t)
-    pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]);
+    pair_act = tf.keras.layers.Add()([pair_act, residual]);
     # triangle_multiplication_incoming
-    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'incoming', name = 'block%d/triangle_multiplication_incoming' % i)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, act)
+    residual = TriangleMultiplication(c_t, intermediate_channel = num_intermediate_channel, mode = 'incoming', name = 'block%d/triangle_multiplication_incoming' % i)([pair_act, pair_mask]); # residual.shape = (N_res, N_res, act)
     residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': rate})(residual); # residual.shape = (N_res, N_res, c_t)
-    pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]);
-  return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results, **kwargs);
+    pair_act = tf.keras.layers.Add()([pair_act, residual]);
+  return tf.keras.Model(inputs = inputs, outputs = pair_act, **kwargs);
 
 def Transition(c_t, num_intermediate_factor = 4):
   act = tf.keras.Input((None, c_t)); # act.shape = (batch, N_res, c_t)
   mask = tf.keras.Input((None,)); # mask.shape = (batch, N_res)
-  mask_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(mask); # mask_results.shape = (batch, N_res, 1)
-  act_results = tf.keras.layers.LayerNormalization()(act); # act_results.shape = (batch, N_res, c_t)
-  act_results = tf.keras.layers.Dense(c_t * num_intermediate_factor, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)))(act_results); # act_results.shape = (batch, N_res, 4*c_t)
-  act_results = tf.keras.layers.Dense(c_t, kernel_initializer = tf.keras.initializers.Zeros())(act_results); # act_results.shape = (batch, N_res, c_t)
-  return tf.keras.Model(inputs = (act, mask), outputs = act_results);
+  inputs = (act, mask);
+  mask = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(mask); # mask.shape = (batch, N_res, 1)
+  act = tf.keras.layers.LayerNormalization()(act); # act.shape = (batch, N_res, c_t)
+  act = tf.keras.layers.Dense(c_t * num_intermediate_factor, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)))(act); # act.shape = (batch, N_res, 4*c_t)
+  act = tf.keras.layers.Dense(c_t, kernel_initializer = tf.keras.initializers.Zeros())(act); # act.shape = (batch, N_res, c_t)
+  return tf.keras.Model(inputs = inputs, outputs = act);
 
 def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbatched_bias = False, **kwargs):
   # NOTE: multi head attention: q_data is query, m_data is key, m_data is value
@@ -111,13 +111,14 @@ def MSARowAttentionWithPairBias(c_m, c_z, num_head = 4, **kwargs):
   msa_act = tf.keras.Input((None, c_m)); # msa_act.shape = (N_seq, N_res, c_m)
   msa_mask = tf.keras.Input((None,)); # msa_mask.shape = (N_seq, N_res)
   pair_act = tf.keras.Input((None, c_z)); # pair_act.shape = (N_res, N_res, c_z)
+  inputs = (msa_act, msa_mask, pair_act);
   bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(msa_mask); # bias.shape = (N_seq, num_head = 1, N_queries = 1, N_res)
-  msa_act_results = tf.keras.layers.LayerNormalization()(msa_act);
-  pair_act_results = tf.keras.layers.LayerNormalization()(pair_act); # pair_act_results.shape = (N_res, N_res, c_z)
-  nonbatched_bias = tf.keras.layers.Dense(num_head, use_bias = False, kernel_initializer = tf.keras.initializers.RandomNormal(stddev = 1./np.sqrt(c_z)))(pair_act_results); # nonbatched_bias.shape = (N_res. N_res, num_head)
+  msa_act = tf.keras.layers.LayerNormalization()(msa_act);
+  pair_act = tf.keras.layers.LayerNormalization()(pair_act); # pair_act.shape = (N_res, N_res, c_z)
+  nonbatched_bias = tf.keras.layers.Dense(num_head, use_bias = False, kernel_initializer = tf.keras.initializers.RandomNormal(stddev = 1./np.sqrt(c_z)))(pair_act); # nonbatched_bias.shape = (N_res. N_res, num_head)
   nonbatched_bias = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2, 0, 1)))(nonbatched_bias); # nonbatched_bias.shape = (num_head, N_res, N_res)
-  msa_act_results = Attention(c_m, key_dim = c_m, num_head = num_head, value_dim = c_m, use_nonbatched_bias = True)([msa_act_results, msa_act_results, bias, nonbatched_bias]); # msa_act_results.shape = (N_seq, N_res, c_m)
-  return tf.keras.Model(inputs = (msa_act, msa_mask, pair_act), outputs = msa_act_results, **kwargs);
+  msa_act = Attention(c_m, key_dim = c_m, num_head = num_head, value_dim = c_m, use_nonbatched_bias = True)([msa_act, msa_act, bias, nonbatched_bias]); # msa_act.shape = (N_seq, N_res, c_m)
+  return tf.keras.Model(inputs = inputs, outputs = msa_act, **kwargs);
 
 def MSAColumnAttention(c_m, num_head = 4, **kwargs):
   # NOTE: multi head self attention: query is msa_act.T, key is msa_act.T, value is msa_act.T.
@@ -125,13 +126,14 @@ def MSAColumnAttention(c_m, num_head = 4, **kwargs):
   # 1) use msa_mask to control bias, bias's shape is N_res(batch) x num_head(1) x N_queries(1) x N_seq.
   msa_act = tf.keras.Input((None, c_m)); # msa_act.shape = (N_seq, N_res, c_m)
   msa_mask = tf.keras.Input((None,)); # msa_mask.shape = (N_seq, N_res)
-  msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act); # msa_act_results.shape = (N_res, N_seq, c_m)
-  msa_mask_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(msa_mask); # msa_mask_results.shape = (N_res, N_seq)
-  bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(msa_mask_results); # bias.shape = (N_res, 1, 1, N_seq)
-  msa_act_results = tf.keras.layers.LayerNormalization()(msa_act_results); # msa_act_results.shape = (N_res, N_seq, c_m)
-  msa_act_results = Attention(c_m, key_dim = c_m, num_head = num_head, value_dim = c_m, use_nonbatched_bias = False)([msa_act_results, msa_act_results, bias]); # msa_act_results.shape = (N_res, N_seq, c_m)
-  msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act_results); # msa_act_results.shape = (N_seq, N_res, c_m)
-  return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results, **kwargs);
+  inputs = (msa_act, msa_mask);
+  msa_act = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act); # msa_act.shape = (N_res, N_seq, c_m)
+  msa_mask = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(msa_mask); # msa_mask.shape = (N_res, N_seq)
+  bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(msa_mask); # bias.shape = (N_res, 1, 1, N_seq)
+  msa_act = tf.keras.layers.LayerNormalization()(msa_act); # msa_act.shape = (N_res, N_seq, c_m)
+  msa_act = Attention(c_m, key_dim = c_m, num_head = num_head, value_dim = c_m, use_nonbatched_bias = False)([msa_act, msa_act, bias]); # msa_act.shape = (N_res, N_seq, c_m)
+  msa_act = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act); # msa_act.shape = (N_seq, N_res, c_m)
+  return tf.keras.Model(inputs = inputs, outputs = msa_act, **kwargs);
 
 def MSAColumnGlobalAttention(c_m, num_head = 4, **kwargs):
   # NOTE: multi head self attention: query is msa_act.T, key is msa_act.T, value is msa_act.T.
@@ -139,14 +141,15 @@ def MSAColumnGlobalAttention(c_m, num_head = 4, **kwargs):
   # 1) use msa_mask to control q_mask which controls bias in global attention.
   msa_act = tf.keras.Input((None, c_m)); # msa_act.shape = (N_seq, N_res, c_m)
   msa_mask = tf.keras.Input((None,)); # msa_mask.shape = (N_seq, N_res)
-  msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act); # msa_act_results.shape = (N_res, N_seq, c_m)
-  msa_mask_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(msa_mask); # msa_mask_results.shape = (N_res, N_seq)
-  #bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(msa_mask_results); # bias.shape = (N_res, 1, 1, N_seq)
-  msa_act_results = tf.keras.layers.LayerNormalization()(msa_act_results); # msa_act_results.shape = (N_res, N_seq, c_m)
-  msa_mask_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(msa_mask_results); # msa_mask_results.shape = (N_res, N_seq, 1)
-  msa_act_results = GlobalAttention(c_m, key_dim = c_m, num_head = num_head, value_dim = c_m)([msa_act_results, msa_act_results, msa_mask_results]); # msa_act_results.shape = (N_res, N_seq, c_m)
-  msa_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act_results); # msa_act_results.shape = (N_seq, N_res, c_m)
-  return tf.keras.Model(inputs = (msa_act, msa_mask), outputs = msa_act_results, **kwargs);
+  inputs = (msa_act, msa_mask);
+  msa_act = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act); # msa_act.shape = (N_res, N_seq, c_m)
+  msa_mask = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(msa_mask); # msa_mask.shape = (N_res, N_seq)
+  #bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(msa_mask); # bias.shape = (N_res, 1, 1, N_seq)
+  msa_act = tf.keras.layers.LayerNormalization()(msa_act); # msa_act.shape = (N_res, N_seq, c_m)
+  msa_mask = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(msa_mask); # msa_mask.shape = (N_res, N_seq, 1)
+  msa_act = GlobalAttention(c_m, key_dim = c_m, num_head = num_head, value_dim = c_m)([msa_act, msa_act, msa_mask]); # msa_act.shape = (N_res, N_seq, c_m)
+  msa_act = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(msa_act); # msa_act.shape = (N_seq, N_res, c_m)
+  return tf.keras.Model(inputs = inputs, outputs = msa_act, **kwargs);
 
 def TriangleAttention(c_z, num_head = 4, orientation = 'per_column', **kwargs):
   # NOTE: multi head self attention: query is pair_act, key is pair_act, value is pair_act.
@@ -156,50 +159,52 @@ def TriangleAttention(c_z, num_head = 4, orientation = 'per_column', **kwargs):
   assert orientation in ['per_column', 'per_row'];
   pair_act = tf.keras.Input((None, c_z)); # pair_act.shape = (N_res, N_res, c_z)
   pair_mask = tf.keras.Input((None,)); # pair_mask.shape = (N_res, N_res)
+  inputs = (pair_act, pair_mask);
   if orientation == 'per_column':
-    pair_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(pair_act); # pair_act_results.shape = (N_res, N_res, c_z)
-    pair_mask_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(pair_mask); # pair_mask_results.shape = (N_res, N_res)
+    pair_act = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(pair_act); # pair_act.shape = (N_res, N_res, c_z)
+    pair_mask = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(pair_mask); # pair_mask.shape = (N_res, N_res)
   else:
-    pair_act_results = pair_act;
-    pair_mask_results = pair_mask;
+    pair_act = pair_act;
+    pair_mask = pair_mask;
   bias = tf.keras.layers.Lambda(lambda x: tf.reshape(1e9 * (x - 1.), (tf.shape(x)[0], 1, 1, tf.shape(x)[1])))(pair_mask); # bias.shape = (N_seq, 1, 1, N_res) if per_row else (N_res, 1, 1, N_seq)
-  pair_act_results = tf.keras.layers.LayerNormalization()(pair_act_results); # pair_act_results.shape = (N_res, N_res, c_z)
-  nonbatched_bias = tf.keras.layers.Dense(num_head, use_bias = False, kernel_initializer = tf.keras.initializers.RandomNormal(stddev = 1./np.sqrt(c_z)))(pair_act_results); # nonbatched_bias.shape = (N_res, N_res, num_head)
+  pair_act = tf.keras.layers.LayerNormalization()(pair_act); # pair_act.shape = (N_res, N_res, c_z)
+  nonbatched_bias = tf.keras.layers.Dense(num_head, use_bias = False, kernel_initializer = tf.keras.initializers.RandomNormal(stddev = 1./np.sqrt(c_z)))(pair_act); # nonbatched_bias.shape = (N_res, N_res, num_head)
   nonbatched_bias = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2, 0, 1)))(nonbatched_bias); # nonbatched_bias.shape = (num_head, N_res, N_res)
-  pair_act_results = Attention(c_z, key_dim = c_z, num_head = num_head, value_dim = c_z, use_nonbatched_bias = True)([pair_act_results, pair_act_results, bias, nonbatched_bias]); # pair_act_results.shape = (N_res, N_res, c_z)
+  pair_act = Attention(c_z, key_dim = c_z, num_head = num_head, value_dim = c_z, use_nonbatched_bias = True)([pair_act, pair_act, bias, nonbatched_bias]); # pair_act.shape = (N_res, N_res, c_z)
   if orientation == 'per_column':
-    pair_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(pair_act_results); # pair_act_results.shape = (N_res, N_res, c_z)
-  return tf.keras.Model(inputs = (pair_act, pair_mask), outputs = pair_act_results, **kwargs);
+    pair_act = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(pair_act); # pair_act.shape = (N_res, N_res, c_z)
+  return tf.keras.Model(inputs = inputs, outputs = pair_act, **kwargs);
 
 def TriangleMultiplication(c_z, intermediate_channel = 64, mode = 'outgoing', **kwargs):
   assert mode in ['outgoing', 'incoming'];
   act = tf.keras.Input((None, c_z)); # act.shape = (N_res, N_res, c_z)
   mask = tf.keras.Input((None,)); # mask.shape = (N_res, N_res)
-  mask_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(mask); # mask_results.shape = (N_res, N_res, 1)
-  act_results = tf.keras.layers.LayerNormalization()(act); # act_results.shape = (N_res, N_res, c_z)
-  input_act = act_results;
+  inputs = (act, mask);
+  mask = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(mask); # mask.shape = (N_res, N_res, 1)
+  act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_res, N_res, c_z)
+  input_act = act;
   # left projection
-  left_projection = tf.keras.layers.Dense(intermediate_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act_results); # left_projection.shape = (N_res, N_res, intermediate_channel)
-  left_proj_act = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask_results, left_projection]); # left_proj_act.shape = (N_res, N_res, intermediate_channel)
+  left_projection = tf.keras.layers.Dense(intermediate_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act); # left_projection.shape = (N_res, N_res, intermediate_channel)
+  left_proj_act = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask, left_projection]); # left_proj_act.shape = (N_res, N_res, intermediate_channel)
   # right projection
-  right_projection = tf.keras.layers.Dense(intermediate_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act_results); # right_projection.shape = (N_res, N_res, intermediate_channel)
-  right_proj_act = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask_results, right_projection]); # right_proj_act.shape = (N_res, N_res, intermediate_channel)
+  right_projection = tf.keras.layers.Dense(intermediate_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act); # right_projection.shape = (N_res, N_res, intermediate_channel)
+  right_proj_act = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask, right_projection]); # right_proj_act.shape = (N_res, N_res, intermediate_channel)
   # left gate
-  left_gate_values = tf.keras.layers.Dense(intermediate_channel, activation = tf.keras.activations.sigmoid, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Constant(1.))(act_results); # left_gate_values.shape = (N_res, N_res, intermediate_channel)
-  right_gate_values = tf.keras.layers.Dense(intermediate_channel, activation = tf.keras.activations.sigmoid, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Constant(1.))(act_results); # right_gate_values.shape = (N_res, N_res, intermediate_channel)
+  left_gate_values = tf.keras.layers.Dense(intermediate_channel, activation = tf.keras.activations.sigmoid, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Constant(1.))(act); # left_gate_values.shape = (N_res, N_res, intermediate_channel)
+  right_gate_values = tf.keras.layers.Dense(intermediate_channel, activation = tf.keras.activations.sigmoid, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Constant(1.))(act); # right_gate_values.shape = (N_res, N_res, intermediate_channel)
   # gate projection
   left_proj_act = tf.keras.layers.Multiply()([left_proj_act, left_gate_values]); # left_proj_act.shape = (N_res, N_res, intermediate_channel)
   right_proj_act = tf.keras.layers.Multiply()([right_proj_act, right_gate_values]); # right_proj_act.shape = (N_res, N_res, intermediate_channel)
   # apply equation
   if mode == 'outgoing':
-    act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.linalg.matmul(tf.transpose(x[0], (2,0,1)), tf.transpose(x[1], (2,0,1)), transpose_b = True), (1,2,0)))([left_proj_act, right_proj_act]); # act_results.shape = (N_res, N_res, intermediate_channel)
+    act = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.linalg.matmul(tf.transpose(x[0], (2,0,1)), tf.transpose(x[1], (2,0,1)), transpose_b = True), (1,2,0)))([left_proj_act, right_proj_act]); # act.shape = (N_res, N_res, intermediate_channel)
   else:
-    act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.linalg.matmul(tf.transpose(x[0], (2,1,0)), tf.transpose(x[1], (2,1,0)), transpose_b = True), (2,1,0)))([left_proj_act, right_proj_act]); # act_results.shape = (N_res, N_res, intermediate_channel)
-  act_results = tf.keras.layers.LayerNormalization()(act_results); # act_results.shape = (N_res, N_res, intermediate_channel)
-  act_results = tf.keras.layers.Dense(c_z, kernel_initializer = tf.keras.initializers.Zeros())(act_results); # act_results.shape = (N_res, N_res, c_z)
+    act = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.linalg.matmul(tf.transpose(x[0], (2,1,0)), tf.transpose(x[1], (2,1,0)), transpose_b = True), (2,1,0)))([left_proj_act, right_proj_act]); # act.shape = (N_res, N_res, intermediate_channel)
+  act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_res, N_res, intermediate_channel)
+  act = tf.keras.layers.Dense(c_z, kernel_initializer = tf.keras.initializers.Zeros())(act); # act.shape = (N_res, N_res, c_z)
   gate_values = tf.keras.layers.Dense(c_z, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Constant(1.))(input_act);
-  act_results = tf.keras.layers.Multiply()([act_results, gate_values]); # act_results.shape = (N_res, N_res, c_z)
-  return tf.keras.Model(inputs = (act, mask), outputs = act_results, **kwargs);
+  act = tf.keras.layers.Multiply()([act, gate_values]); # act.shape = (N_res, N_res, c_z)
+  return tf.keras.Model(inputs = inputs, outputs = act, **kwargs);
 
 def MaskedMsaHead(c_m, num_output = 23, **kwargs):
   msa = tf.keras.Input((None, c_m)); # msa.shape = (N_seq, N_seq, c_m)
@@ -208,11 +213,12 @@ def MaskedMsaHead(c_m, num_output = 23, **kwargs):
 
 def PredictedLDDTHead(c_s, num_channels = 128, num_bins = 50, **kwargs):
   act = tf.keras.Input((c_s,)); # act.shape = (N_res, c_s)
-  act_results = tf.keras.layers.LayerNormalization()(act); # act_results.shape = (N_res, c_s)
-  act_results = tf.keras.layers.Dense(num_channels, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)))(act_results);
-  act_results = tf.keras.layers.Dense(num_channels, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)))(act_results);
-  logits = tf.keras.layers.Dense(num_bins, kernel_initializer = tf.keras.initializers.Zeros())(act_results);
-  return tf.keras.Model(inputs = act, outputs = logits, **kwargs);
+  inputs = (act,);
+  act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_res, c_s)
+  act = tf.keras.layers.Dense(num_channels, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)))(act);
+  act = tf.keras.layers.Dense(num_channels, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)))(act);
+  logits = tf.keras.layers.Dense(num_bins, kernel_initializer = tf.keras.initializers.Zeros())(act);
+  return tf.keras.Model(inputs = inputs, outputs = logits, **kwargs);
 
 def PredictedAlignedErrorHead(c_z, num_bins = 64, max_error_bin = 31):
   act = tf.keras.Input((None, c_z)); # act.shape = (N_res, N_res, c_z)
@@ -235,20 +241,21 @@ def DistogramHead(c_z, num_bins = 64, first_break = 2.3125, last_break = 21.6875
 def OuterProductMean(num_output_channel, c_m, num_outer_channel = 32):
   act = tf.keras.Input((None, c_m)); # act.shape = (N_seq, N_res, c_m)
   mask = tf.keras.Input((None,)); # mask.shape = (N_seq, N_res)
-  mask_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(mask); # mask_results.shape = (N_seq, N_res, 1)
-  act_results = tf.keras.layers.LayerNormalization()(act); # act_results.shape = (N_seq, N_res, c_m)
-  left_act_results = tf.keras.layers.Dense(num_outer_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act_results); # left_act_results.shape = (N_seq, N_res, num_outer_channel)
-  left_act_results = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask_results, left_act_results]); # left_act_results.shape = (N_seq, N_res, num_outer_channel)
-  right_act_results = tf.keras.layers.Dense(num_outer_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act_results); # right_act_results.shape = (N_seq, N_res, num_outer_channel)
-  right_act_results = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask_results, right_act_results]); # right_act_results.shape = (N_seq, N_res, num_outer_channel)
-  left_act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1)))(left_act_results); # left_act_results.shape = (N_seq, num_outer_channel, N_res)
-  act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.reshape(tf.linalg.matmul(tf.reshape(x[0], (tf.shape(x[0])[0], -1)), tf.reshape(x[1], (tf.shape(x[1])[0], -1)), transpose_a = True), (tf.shape(x[0])[1], tf.shape(x[0])[2], tf.shape(x[1])[1], tf.shape(x[1])[2])), (2,1,0,3)))([left_act_results, right_act_results]); # act_results.shape = (N_res, N_res, num_outer_channel, num_outer_channel)
-  act_results_reshape = tf.keras.layers.Lambda(lambda x, n: tf.reshape(x, (tf.shape(x)[0], tf.shape(x)[1], n**2)), arguments = {'n': num_outer_channel})(act_results); # act_results.shape = (N_res, N_res, num_outer_channel**2)
-  act_results = tf.keras.layers.Dense(num_output_channel, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Zeros())(act_results_reshape); # act_results.shape = (N_res, N_res, num_output_channel)
-  act_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(act_results); # act_results.shape = (N_res, N_res, num_output_channel)
-  norm = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.linalg.matmul(tf.transpose(x, (2,1,0)), tf.transpose(x,(2,1,0)), transpose_b = True), (1,2,0)))(mask_results); # norm.shape = (N_res, N_res, 1)
-  act_results = tf.keras.layers.Lambda(lambda x: x[0] / (x[1] + 1e-3))([act_results, norm]); # act_results.shape = (N_res, N_res, num_output_channel)
-  return tf.keras.Model(inputs = (act, mask), outputs = act_results);
+  inputs = (act, mask);
+  mask = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(mask); # mask.shape = (N_seq, N_res, 1)
+  act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_seq, N_res, c_m)
+  left_act = tf.keras.layers.Dense(num_outer_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act); # left_act.shape = (N_seq, N_res, num_outer_channel)
+  left_act = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask, left_act]); # left_act.shape = (N_seq, N_res, num_outer_channel)
+  right_act = tf.keras.layers.Dense(num_outer_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'))(act); # right_act.shape = (N_seq, N_res, num_outer_channel)
+  right_act = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask, right_act]); # right_act.shape = (N_seq, N_res, num_outer_channel)
+  left_act = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1)))(left_act); # left_act.shape = (N_seq, num_outer_channel, N_res)
+  act = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.reshape(tf.linalg.matmul(tf.reshape(x[0], (tf.shape(x[0])[0], -1)), tf.reshape(x[1], (tf.shape(x[1])[0], -1)), transpose_a = True), (tf.shape(x[0])[1], tf.shape(x[0])[2], tf.shape(x[1])[1], tf.shape(x[1])[2])), (2,1,0,3)))([left_act, right_act]); # act.shape = (N_res, N_res, num_outer_channel, num_outer_channel)
+  act_reshape = tf.keras.layers.Lambda(lambda x, n: tf.reshape(x, (tf.shape(x)[0], tf.shape(x)[1], n**2)), arguments = {'n': num_outer_channel})(act); # act.shape = (N_res, N_res, num_outer_channel**2)
+  act = tf.keras.layers.Dense(num_output_channel, kernel_initializer = tf.keras.initializers.Zeros(), bias_initializer = tf.keras.initializers.Zeros())(act_reshape); # act.shape = (N_res, N_res, num_output_channel)
+  act = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(act); # act.shape = (N_res, N_res, num_output_channel)
+  norm = tf.keras.layers.Lambda(lambda x: tf.transpose(tf.linalg.matmul(tf.transpose(x, (2,1,0)), tf.transpose(x,(2,1,0)), transpose_b = True), (1,2,0)))(mask); # norm.shape = (N_res, N_res, 1)
+  act = tf.keras.layers.Lambda(lambda x: x[0] / (x[1] + 1e-3))([act, norm]); # act.shape = (N_res, N_res, num_output_channel)
+  return tf.keras.Model(inputs = inputs, outputs = act);
 
 def dgram_from_positions(min_bin, max_bin, num_bins = 39, use_3d = False):
   positions = tf.keras.Input((3,)) if use_3d == False else tf.keras.Input((None, 3)); # positions.shape = (N_res, 3)
@@ -287,89 +294,88 @@ def EvoformerIteration(c_m, c_z, is_extra_msa, key_dim = 64, num_head = 4, value
   pair_act = tf.keras.Input((None, c_z)); # pair_act.shape = (N_res, N_res, c_z)
   msa_mask = tf.keras.Input((None,)); # msa_mask.shape = (N_seq, N_res)
   pair_mask = tf.keras.Input((None,)); # pair_mask.shape = (N_res, N_res)
-  msa_act_results = msa_act;
-  pair_act_results = pair_act;
-  msa_mask_results = msa_mask;
-  pair_mask_results = pair_mask;
+  inputs = (msa_act, pair_act, msa_mask, pair_mask);
   if outer_first:
-    residual = OuterProductMean(c_z, c_m, num_outer_channel = outer_num_channel)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_z)
+    residual = OuterProductMean(c_z, c_m, num_outer_channel = outer_num_channel)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_z)
     residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': outer_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
-    pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
-  residual = MSARowAttentionWithPairBias(c_m, c_z, num_head = row_num_head)([msa_act_results, msa_mask_results, pair_act_results]); # residual.shape = (N_res, N_res, c_m)
+    pair_act = tf.keras.layers.Add()([pair_act, residual]); # pair_act.shape = (N_res, N_res, c_z)
+  residual = MSARowAttentionWithPairBias(c_m, c_z, num_head = row_num_head)([msa_act, msa_mask, pair_act]); # residual.shape = (N_res, N_res, c_m)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': row_drop_rate})(residual); # residual.shape = (N_res, N_res, c_m)
-  msa_act_results = tf.keras.layers.Add()([msa_act_results, residual]); # msa_act_results.shape = (N_res, N_res, c_m)
+  msa_act = tf.keras.layers.Add()([msa_act, residual]); # msa_act.shape = (N_res, N_res, c_m)
   if not is_extra_msa:
-    residual = MSAColumnAttention(c_m, num_head = column_num_head)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_m)
+    residual = MSAColumnAttention(c_m, num_head = column_num_head)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_m)
   else:
-    residual = MSAColumnGlobalAttention(c_m, num_head = column_num_head)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_m)
+    residual = MSAColumnGlobalAttention(c_m, num_head = column_num_head)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_m)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])), arguments = {'r': column_drop_rate})(residual); # residual.shape = (N_res, N_res, c_m)
-  msa_act_results = tf.keras.layers.Add()([msa_act_results, residual]); # msa_act_results.shape = (N_res, N_res, c_m)
-  residual = Transition(c_m, num_intermediate_factor = transition_factor)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_m)
+  msa_act = tf.keras.layers.Add()([msa_act, residual]); # msa_act.shape = (N_res, N_res, c_m)
+  residual = Transition(c_m, num_intermediate_factor = transition_factor)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_m)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': transition_drop_rate})(residual); # residual.shape = (N_res, N_res, c_m)
-  msa_act_results = tf.keras.layers.Add()([msa_act_results, residual]); # msa_act_results.shape = (N_res, N_res, c_m)
+  msa_act = tf.keras.layers.Add()([msa_act, residual]); # msa_act.shape = (N_res, N_res, c_m)
   if not outer_first:
-    residual = OuterProductMean(c_z, c_m, num_outer_channel = outer_num_channel)([msa_act_results, msa_mask_results]); # residual.shape = (N_res, N_res, c_z)
+    residual = OuterProductMean(c_z, c_m, num_outer_channel = outer_num_channel)([msa_act, msa_mask]); # residual.shape = (N_res, N_res, c_z)
     residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': outer_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
-    pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
-  residual = TriangleMultiplication(c_z, intermediate_channel = tri_mult_intermediate_channel, mode = 'outgoing')([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_z)
+    pair_act = tf.keras.layers.Add()([pair_act, residual]); # pair_act.shape = (N_res, N_res, c_z)
+  residual = TriangleMultiplication(c_z, intermediate_channel = tri_mult_intermediate_channel, mode = 'outgoing')([pair_act, pair_mask]); # residual.shape = (N_res, N_res, c_z)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': tri_mult_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
-  pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
-  residual = TriangleMultiplication(c_z, intermediate_channel = tri_mult_intermediate_channel, mode = 'incoming')([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_z)
+  pair_act = tf.keras.layers.Add()([pair_act, residual]); # pair_act.shape = (N_res, N_res, c_z)
+  residual = TriangleMultiplication(c_z, intermediate_channel = tri_mult_intermediate_channel, mode = 'incoming')([pair_act, pair_mask]); # residual.shape = (N_res, N_res, c_z)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': tri_mult_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
-  pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
-  residual = TriangleAttention(c_z, num_head = num_head)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_z)
+  pair_act = tf.keras.layers.Add()([pair_act, residual]); # pair_act.shape = (N_res, N_res, c_z)
+  residual = TriangleAttention(c_z, num_head = num_head)([pair_act, pair_mask]); # residual.shape = (N_res, N_res, c_z)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': tri_attn_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
-  pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
-  residual = TriangleAttention(c_z, num_head = num_head)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_z)
+  pair_act = tf.keras.layers.Add()([pair_act, residual]); # pair_act.shape = (N_res, N_res, c_z)
+  residual = TriangleAttention(c_z, num_head = num_head)([pair_act, pair_mask]); # residual.shape = (N_res, N_res, c_z)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (tf.shape(x)[0], 1, tf.shape(x)[2])), arguments = {'r': tri_attn_drop_rate})(residual); # residual.shape = (N_res, N_res, c_z)
-  pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
-  residual = Transition(c_z, num_intermediate_factor = transition_factor)([pair_act_results, pair_mask_results]); # residual.shape = (N_res, N_res, c_z)
+  pair_act = tf.keras.layers.Add()([pair_act, residual]); # pair_act.shape = (N_res, N_res, c_z)
+  residual = Transition(c_z, num_intermediate_factor = transition_factor)([pair_act, pair_mask]); # residual.shape = (N_res, N_res, c_z)
   residual = tf.keras.layers.Lambda(lambda x, r: tf.nn.dropout(x, rate = r, noise_shape = (1, tf.shape(x)[1], tf.shape(x)[2])), arguments = {'r': transition_drop_rate})(residual); # residual.shape = (N_Res, N_res, c_z)
-  pair_act_results = tf.keras.layers.Add()([pair_act_results, residual]); # pair_act_results.shape = (N_res, N_res, c_z)
-  return tf.keras.Model(inputs = (msa_act, pair_act, msa_mask, pair_mask), outputs = (msa_act_results, pair_act_results));
+  pair_act = tf.keras.layers.Add()([pair_act, residual]); # pair_act.shape = (N_res, N_res, c_z)
+  return tf.keras.Model(inputs = inputs, outputs = (msa_act, pair_act));
 
 def make_canonical_transform():
   n_xyz = tf.keras.Input((3,)); # n_xyz.shape = (batch, 3)
   ca_xyz = tf.keras.Input((3,)); # ca_xyz.shape = (batch, 3)
   c_xyz = tf.keras.Input((3,)); # c_xyz.shape = (batch, 3)
-  n_xyz_results = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([n_xyz, ca_xyz]); # n_xyz_results.shape = (batch, 3)
-  c_xyz_results = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([c_xyz, ca_xyz]); # c_xyz_results.shape = (batch, 3)
-  sin_c1 = tf.keras.layers.Lambda(lambda x: -x[:,1] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1])))(c_xyz_results); # sin_c1.shape = (batch)
-  cos_c1 = tf.keras.layers.Lambda(lambda x: -x[:,0] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1])))(c_xyz_results); # cos_c1.shape = (batch)
+  inputs = (n_xyz, ca_xyz, c_xyz);
+  n_xyz = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([n_xyz, ca_xyz]); # n_xyz.shape = (batch, 3)
+  c_xyz = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([c_xyz, ca_xyz]); # c_xyz.shape = (batch, 3)
+  sin_c1 = tf.keras.layers.Lambda(lambda x: -x[:,1] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1])))(c_xyz); # sin_c1.shape = (batch)
+  cos_c1 = tf.keras.layers.Lambda(lambda x: -x[:,0] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1])))(c_xyz); # cos_c1.shape = (batch)
   c1_rot_matrix = tf.keras.layers.Lambda(lambda x: tf.stack([tf.stack([x[1], -x[0], tf.zeros_like(x[0])], axis = -1),
                                                              tf.stack([x[0], x[1], tf.zeros_like(x[0])], axis = -1),
                                                              tf.stack([tf.zeros_like(x[0]), tf.zeros_like(x[0]), tf.ones_like(x[0])], axis = -1)], axis = -2))([sin_c1, cos_c1]); # c1_rot_matrix.shape = (batch, 3, 3)
-  sin_c2 = tf.keras.layers.Lambda(lambda x: x[:,2] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1]) + tf.math.square(x[:,2])))(c_xyz_results); # sin_c2.shape = (batch)
-  cos_c2 = tf.keras.layers.Lambda(lambda x: tf.math.sqrt(tf.math.square(x[:,0]) + tf.math.square(x[:,1])) / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1]) + tf.math.square(x[:,2])))(c_xyz_results); # cos_c2.shape = (batch)
+  sin_c2 = tf.keras.layers.Lambda(lambda x: x[:,2] / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1]) + tf.math.square(x[:,2])))(c_xyz); # sin_c2.shape = (batch)
+  cos_c2 = tf.keras.layers.Lambda(lambda x: tf.math.sqrt(tf.math.square(x[:,0]) + tf.math.square(x[:,1])) / tf.math.sqrt(1e-20 + tf.math.square(x[:,0]) + tf.math.square(x[:,1]) + tf.math.square(x[:,2])))(c_xyz); # cos_c2.shape = (batch)
   c2_rot_matrix = tf.keras.layers.Lambda(lambda x: tf.stack([tf.stack([x[1], tf.zeros_like(x[0]), x[0]], axis = -1),
                                                              tf.stack([tf.zeros_like(x[0]), tf.ones_like(x[0]), tf.zeros_like(x[0])], axis = -1),
                                                              tf.stack([-x[0], tf.zeros_like(x[0]), x[1]], axis = -1)], axis = -2))([sin_c2, cos_c2]); # c2_rot_matrix.shape = (batch, 3, 3)
   c_rot_matrix = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([c2_rot_matrix, c1_rot_matrix]); # c_rot_matrix.shape = (batch, 3, 3)
-  n_xyz_results = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[1], axis = -1)), axis = -1))([c_rot_matrix, n_xyz_results]); # n_xyz_results.shape = (batch, 3)
-  sin_n = tf.keras.layers.Lambda(lambda x: -x[:,2] / tf.math.sqrt(1e-20 + tf.math.square(x[:,1]) + tf.math.square(x[:,2])))(n_xyz_results); # sin_n.shape = (batch)
-  cos_n = tf.keras.layers.Lambda(lambda x: x[:,1] / tf.math.sqrt(1e-20 + tf.math.square(x[:,1]) + tf.math.square(x[:,2])))(n_xyz_results); # cos_n.shape = (batch)
+  n_xyz = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[1], axis = -1)), axis = -1))([c_rot_matrix, n_xyz]); # n_xyz.shape = (batch, 3)
+  sin_n = tf.keras.layers.Lambda(lambda x: -x[:,2] / tf.math.sqrt(1e-20 + tf.math.square(x[:,1]) + tf.math.square(x[:,2])))(n_xyz); # sin_n.shape = (batch)
+  cos_n = tf.keras.layers.Lambda(lambda x: x[:,1] / tf.math.sqrt(1e-20 + tf.math.square(x[:,1]) + tf.math.square(x[:,2])))(n_xyz); # cos_n.shape = (batch)
   n_rot_matrix = tf.keras.layers.Lambda(lambda x: tf.stack([tf.stack([tf.ones_like(x[0]), tf.zeros_like(x[0]), tf.zeros_like(x[0])], axis = -1),
                                                             tf.stack([tf.zeros_like(x[0]), x[1], -x[0]], axis = -1),
                                                             tf.stack([tf.zeros_like(x[0]), x[0], x[1]], axis = -1)], axis = -2))([sin_n, cos_n]); # n_rot_matrix.shape = (batch, 3, 3)
   rot_matrix = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([n_rot_matrix, c_rot_matrix]); # rot_matrix.shape = (batch, 3, 3)
   translation = tf.keras.layers.Lambda(lambda x: -x)(ca_xyz); # translation.shape = (batch, 3)
-  return tf.keras.Model(inputs = (n_xyz, ca_xyz, c_xyz), outputs = (translation, rot_matrix));
+  return tf.keras.Model(inputs = inputs, outputs = (translation, rot_matrix));
 
 def rot_to_quat(unstack_inputs = False):
   if unstack_inputs:
     rot = tf.keras.Input((atom_type_num, 3, 3)); # rot.shape = (N_template, atom_type_num, 3, 3)
-    rot_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rot); # rot_results.shape = (3, 3, N_template, atom_type_num)
+    inputs = (rot,)
+    rot = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rot); # rot.shape = (3, 3, N_template, atom_type_num)
   else:
     rot = tf.keras.Input((3, None, atom_type_num)); # rot.shape = (3, 3, N_template, atom_type_num)
-    rot_results = rot;
+    inputs = (rot,)
   k = tf.keras.layers.Lambda(lambda x: 1/3 * tf.stack([tf.stack([x[0,0] + x[1,1] + x[2,2], x[2,1] - x[1,2], x[0,2] - x[2,0], x[1,0] - x[0,1]], axis = -1),
                                                        tf.stack([x[2,1] - x[1,2], x[0,0] - x[1,1] - x[2,2], x[0,1] + x[1,0], x[0,2] + x[2,0]], axis = -1),
                                                        tf.stack([x[0,2] - x[2,0], x[0,1] + x[1,0], x[1,1] - x[0,0] - x[2,2], x[1,2] + x[2,1]], axis = -1),
-                                                       tf.stack([x[1,0] - x[0,1], x[0,2] + x[2,0], x[1,2] + x[2,1], x[2,2] - x[0,0] - x[1,1]], axis = -1)], axis = -2))(rot_results); # x.shape = (N_template, atom_type_num, 4, 4)
+                                                       tf.stack([x[1,0] - x[0,1], x[0,2] + x[2,0], x[1,2] + x[2,1], x[2,2] - x[0,0] - x[1,1]], axis = -1)], axis = -2))(rot); # x.shape = (N_template, atom_type_num, 4, 4)
   qs = tf.keras.layers.Lambda(lambda x: tf.linalg.eigh(x)[1])(k); # qs.shape = (N_template, atom_type_num, 4, 4)
   # NOTE: return the eigvector of the biggest eigvalue
   qs = tf.keras.layers.Lambda(lambda x: x[...,-1])(qs); # qs.shape = (N_template, atom_type_num, 4)
-  return tf.keras.Model(inputs = rot, outputs = qs);
+  return tf.keras.Model(inputs = inputs, outputs = qs);
 
 def quat_to_rot():
   normalized_quat = tf.keras.Input((atom_type_num, 4)); # normalized_quat.shape = (N_template, atom_type_num, 4)
@@ -390,25 +396,27 @@ def invert_point(unstack_inputs = False, extra_dims = 0):
   if unstack_inputs:
     rotation = tf.keras.Input((atom_type_num, 3, 3)); # rotation.shape = (N_template, atom_type_num, 3, 3)
     translation = tf.keras.Input((atom_type_num, 3)); # translation.shape = (N_template, atom_type_num, 3)
-    rotation_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rotation); # rotation_results.shape = (3,3,N_template, atom_type_num)
-    translation_results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,0,1)))(translation); # translation_results.shape = (3, N_template, atom_type_num)
+    inputs = [rotation, translation];
+    rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rotation); # rotation.shape = (3,3,N_template, atom_type_num)
+    translation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,0,1)))(translation); # translation.shape = (3, N_template, atom_type_num)
   else:
     rotation = tf.keras.Input((3, None, atom_type_num), batch_size = 3); # rotation.shape = (3, 3, N_template, atom_type_num)
     translation = tf.keras.Input((None, atom_type_num), batch_size = 3); # translation.shape = (3, N_template, atom_type_num)
-    rotation_results = rotation;
-    translation_results = translation;
+    inputs = [rotation, translation];
   transformed_points = tf.keras.Input((None, 1, atom_type_num), batch_size = 3); # points.shape = (3, N_template, 1, atom_type_num)
+  inputs.append(transformed_points);
   for _ in range(extra_dims):
-    rotation_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(rotation_results); # rotation_results.shape = (3, 3, N_template, atom_type_num, 1)
-    translation_results = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(translation_results); # translation_results.shape = (3, N_template, atom_type_num, 1)
-  rot_point = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([transformed_points, translation_results]); # rot_point.shape = (3, N_template, atom_type_num, atom_type_num)
-  results = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], x[1], transpose_a = True), axis = -1))([rot_point, translation_results]); # results.shape = (3, N_template, atom_type_num)
-  return tf.keras.Model(inputs = (rotation, translation, transformed_points), outputs = results);
+    rotation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(rotation); # rotation.shape = (3, 3, N_template, atom_type_num, 1)
+    translation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(translation); # translation.shape = (3, N_template, atom_type_num, 1)
+  rot_point = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([transformed_points, translation]); # rot_point.shape = (3, N_template, atom_type_num, atom_type_num)
+  results = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], x[1], transpose_a = True), axis = -1))([rot_point, translation]); # results.shape = (3, N_template, atom_type_num)
+  return tf.keras.Model(inputs = inputs, outputs = results);
 
 def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
   template_aatype = tf.keras.Input((None,)); # template_aatype.shape = (N_template, N_res,)
   template_all_atom_positions = tf.keras.Input((None, atom_type_num, 3)); # template_all_atom_positions.shape = (N_template, N_res, atom_type_num, 3)
+  template_all_atom_masks = tf.keras.Input((None, atom_type_num)); # template_all_atom_masks.shape = (N_template, N_res, atom_type_num)
   template_pseudo_beta_mask = tf.keras.Input((None,)); # template_pseudo_beta_mask.shape = (N_template, N_res)
   template_mask = tf.keras.Input(()); # template_mask.shape = (N_template)
   template_pseudo_beta = tf.keras.Input((None, None,)); # template_seudo_beta.shape = (N_template, N_res, None)
@@ -434,12 +442,19 @@ def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39)
   rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rot); # rotation.shape = (3,3,N_template, atom_type_num)
   points = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -2))(translation); # points.shape = (3, N_template, 1, atom_type_num)
   affine_vec = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, points]); # affine_vec.shape = (3, N_template, atom_type_num)
+  inv_distance_scalar = tf.keras.layers.Lambda(lambda x: tf.math.rsqrt(1e-6 + tf.math.reduce_sum(tf.math.square(x), axis = 0)))(affine_vec); # inv_distance_scalar.shape = (N_template, atom_type_num)
+  template_mask = tf.keras.layers.Lambda(lambda x, n, ca, c: x[..., n] * x[..., ca] * x[..., c], 
+                                         arguments = {'n': residue_constants.atom_order['N'], 'ca': residue_constants.atom_order['CA'], 'c': residue_constants.atom_order['C']})(template_all_atom_masks); # template_mask.shape = (N_template, N_res)
+  template_mask_2d = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = 1) * tf.expand_dims(x, axis = 0))(template_mask); # template_mask_2d.shape = (N_template, N_template, N_res)
+  # TODO
 
 def TemplateEmbedding(c_z):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
   template_mask = tf.keras.Input(()); # template_mask.shape = (N_template)
   mask_2d = tf.keras.Input((None,)); # mask_2d.shape = (N_res, N_res)
-  template_mask_results = tf.keras.layers.Lambda(lambda x: tf.cast(x[0], dtype = x[1].dtype))([template_mask, query_embedding]); # template_mask_results.shape = (N_template)
+  inputs = (query_embedding, template_mask, mask_2d)
+  template_mask = tf.keras.layers.Lambda(lambda x: tf.cast(x[0], dtype = x[1].dtype))([template_mask, query_embedding]); # template_mask.shape = (N_template)
+  # TODO
 
 def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384):
   target_feat = tf.keras.Input((c_m,)); # target_feat.shape = (N_res, c_m)
@@ -455,6 +470,7 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   extra_msa_mask = tf.keras.Input((None,)); # extra_msa_mask.shape = (N_seq, N_res)
   extra_has_deletion = tf.keras.Input((None,)); # extra_has_deletion.shape = (N_seq, N_res)
   extra_deletion_value = tf.keras.Input((None,)); # extra_deletion_value.shape = (N_seq, N_res)
+  inputs = (target_feat, msa_feat, msa_mask, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value,);
 
   preprocess_1d = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(target_feat); # preprocess_1d.shape = (N_res, msa_channel)
   preprocess_msa = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(msa_feat); # prreprocess_msa.shape = (N_seq, N_res, msa_channel)
@@ -469,10 +485,10 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
     dgram = tf.keras.layers.Dense(pair_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(dgram); # dgram.shape = (N_res, N_res, pair_channel)
     pair_activations = tf.keras.layers.Add()([pair_activations, dgram]); # pair_activations.shape = (N_res, N_res, pair_channel)
   if recycle_features:
-    prev_msa_first_row_results = tf.keras.layers.LayerNormalization()(prev_msa_first_row); # prev_msa_first_row_results.shape = (N_res, msa_channel)
-    msa_activations = tf.keras.layers.Lambda(lambda x: tf.concat([tf.expand_dims(x[1], axis = 0), tf.zeros((tf.shape(x[0])[0] - 1, tf.shape(x[0])[1], tf.shape(x[0])[2]))], axis = 0) + x[0])([msa_activations, prev_msa_first_row_results]); # msa_activations.shape = (N_seq, N_res, msa_channel)
-    prev_pair_results = tf.keras.layers.LayerNormalization()(prev_pair); # prev_pair_results.shape = (N_res, N_res, pair_channel)
-    pair_activations = tf.keras.layers.Add()([pair_activations, prev_pair_results]); # pair_activations.shape = (N_res, N_res, pair_channel)
+    prev_msa_first_row = tf.keras.layers.LayerNormalization()(prev_msa_first_row); # prev_msa_first_row.shape = (N_res, msa_channel)
+    msa_activations = tf.keras.layers.Lambda(lambda x: tf.concat([tf.expand_dims(x[1], axis = 0), tf.zeros((tf.shape(x[0])[0] - 1, tf.shape(x[0])[1], tf.shape(x[0])[2]))], axis = 0) + x[0])([msa_activations, prev_msa_first_row]); # msa_activations.shape = (N_seq, N_res, msa_channel)
+    prev_pair = tf.keras.layers.LayerNormalization()(prev_pair); # prev_pair.shape = (N_res, N_res, pair_channel)
+    pair_activations = tf.keras.layers.Add()([pair_activations, prev_pair]); # pair_activations.shape = (N_res, N_res, pair_channel)
   offset = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = 1) - tf.expand_dims(x, axis = 0))(residue_index); # offset.shape = (N_res, N_res)
   rel_pos = tf.keras.layers.Lambda(lambda x, r: tf.one_hot(tf.clip_by_value(x + r, 0, 2 * r), 2 * r + 1), arguments = {'r': max_relative_feature})(offset); # rel_pos.shape = (N_res, N_res, 2 * max_relative_feature + 1)
   rel_pos = tf.keras.layers.Dense(pair_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(rel_pos); # rel_pos.shape = (N_res, N_res, pair_channel)
@@ -507,7 +523,7 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   single_msa_activations = tf.keras.layers.Lambda(lambda x: x[0])(msa_activations); # single_msa_activations.shape = (N_res, msa_channel)
   single_activations = tf.keras.layers.Dense(seq_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(single_msa_activations); # single_activations.shape = (N_res, seq_channel)
   msa = tf.keras.layers.Lambda(lambda x: x[0][:tf.shape(x[1])[0],:,:])([msa_activations, msa_feat]); # msa.shape = (N_seq, N_res, msa_channel)
-  return tf.keras.Model(inputs = (target_feat, msa_feat, msa_mask, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value,),
+  return tf.keras.Model(inputs = inputs,
                         outputs = (single_activations, pair_activations, msa, single_msa_activations));
 
 def AlphaFoldIteration():
