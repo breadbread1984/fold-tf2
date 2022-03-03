@@ -549,6 +549,7 @@ def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_re
     return tuple(outputs);
   batch0_inputs = slice_batch([target_feat, msa_feat, msa_mask, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value], 0);
   representation_update = embeddings_and_evoformer(batch0_inputs);
+  # NOTE: save msa results
   msa_representation = representation_update[2];
   # iteration 1 to num_ensemble
   for i in range(1, num_ensemble):
@@ -563,6 +564,7 @@ def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_re
   single_activations, pair_activations, msa, single_msa_activations = representation_update;
   single_activations = tf.keras.layers.Lambda(lambda x, b: x / b, arguments = {'b': num_ensemble})(single_activations);
   pair_activations = tf.keras.layers.Lambda(lambda x, b: x / b, arguments = {'b': num_ensemble})(pair_activations);
+  # NOTE: restore msa results
   msa = msa_representation;
   single_msa_activations = tf.keras.layers.Lambda(lambda x, b: x / b, arguments = {'b': num_ensemble})(single_msa_activations);
   
