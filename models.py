@@ -210,7 +210,7 @@ def MaskedMsaHead(c_m, num_output = 23, **kwargs):
 
 class AttentionQK(tf.keras.layers.Layer):
   def __init__(self, num_head = 4, num_point_qk = 4, **kwargs):
-    self.num_head = 4;
+    self.num_head = num_head;
     self.num_point_qk = num_point_qk;
     super(WeightedOutput, self).__init__(**kwargs);
   def build(self, input_shape):
@@ -232,6 +232,7 @@ class AttentionQK(tf.keras.layers.Layer):
     return cls(**config);
 
 def InvariantPointAttention(
+    dist_epsilon = 1e-8,
     pair_channel = 128, num_channel = 384,
     num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8):
   inputs_1d = tf.keras.Input((num_channel,)); # inputs_1d.shape = (N_res, num_channel)
@@ -275,10 +276,12 @@ def InvariantPointAttention(
   result_point_global = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1,3)))(result_point_global); # result_point_global.shape = (3, N_res, num_head, num_point_v)
   result_scalar = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (tf.shape(x)[0],-1)))(result_scalar); # result_scalar.shape = (N_res, num_head * num_scalar_v)
   result_point_global = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (3, tf.shape(x)[1], -1)))(result_point_global); # result_point_global.shape = (3, N_res, num_head * num_point_v)
-  result_point_local = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, result_point_global]); # result_point_local.shape = (3, num_head * num_point_v)
-  
-  # TODO
-  return tf.keras.Model(inputs = (), outputs = (result_scalar, result_point_local));
+  result_point_local = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, result_point_global]); # result_point_local.shape = (3, N_res, num_head * num_point_v)
+  result_dist_local = tf.keras.layers.Lambda(lambda x, e: tf.math.sqrt(e + tf.math.square(x[0]) + tf.math.square(x[1]) + tf.math.square(x[2])), arguments = {'e': dist_epsilon})(result_point_local); # result_dist_local.shape = (N_res, num_head * num_point_v)
+  result_attention_over_2d = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(tf.transpose(x[0], (1,0,2)), x[1]))([attn, inputs_2d]); # result_attention_over_2d.shape = (N_res, num_head, pair_channel)
+  result_attention_over_2d = tf.keras.layers.Flatten()(result_attention_over_2d); # result_attention_over_2d.shape = (N_res, num_head * pair_channel)
+  final_act = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], x[1][0], x[1][1], x[1][2], x[2], x[3]], axis = -1))([result_scalar, result_point_local, result_dist_local, result_attention_over_2d]); # final_act.shape = (N_res, num_head * num_scalar_v + 4 * num_head * num_point_v + num_head * pair_channel)
+  return tf.keras.Model(inputs = (), outputs = final_act);
 
 def FoldIteration(num_channel = 384):
   act = tf.keras.Input((num_channel,)); # act.shape = (N_res, num_channel)
@@ -500,7 +503,13 @@ def invert_point(unstack_inputs = False, extra_dims = 0):
     rotation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(rotation); # rotation.shape = (3, 3, N_res, 1)
     translation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(translation); # translation.shape = (3, N_res, 1)
   rot_point = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([transformed_points, translation]); # rot_point.shape = (3, N_res, None)
-  results = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], x[1], transpose_a = True), axis = -1))([rot_point, translation]); # results.shape = (3, None)
+  # NOTE: transpose to make matmul convenient, the following two lines are not present in original code
+  rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rotation); # rotation.shape = (N_res, 1, 3, 3)
+  rot_point = tf.keras.layers.Lambda(lambda x: tf.expand_dims(tf.transpose(x, (1,2,0)), axis = -1))(rot_point); # rot_point.shape = (N_res, None, 3, 1)
+  
+  results = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], x[1], transpose_a = True), axis = -1))([rotation, rot_point]); # results.shape = (N_res, None, 3)
+  # NOTE: this line is to make the result have the same shape as the original code
+  results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,0,1)))(results); # results.shape = (3, N_res, None)
   return tf.keras.Model(inputs = inputs, outputs = results);
 
 def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39):
