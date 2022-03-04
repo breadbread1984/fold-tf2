@@ -208,15 +208,54 @@ def MaskedMsaHead(c_m, num_output = 23, **kwargs):
   logits = tf.keras.layers.Dense(num_output, kernel_initializer = tf.keras.initializers.Zeros())(msa);
   return tf.keras.Model(inputs = msa, outputs = logits, **kwargs);
 
-def StructureModule(num_channel = 384):
+def InvariantPointAttention(
+    pair_channel = 128, num_channel = 384,
+    num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8):
+  inputs_1d = tf.keras.Input((num_channel,)); # inputs_1d.shape = (N_res, num_channel)
+  inputs_2d = tf.keras.Input((None, pair_channel)); # inputs_2d.shape = (N_res, N_res, pair_channel)
+  mask = tf.keras.Input((1,)); # mask.shape = (N_res, 1)
+  rotation = tf.keras.Input((3, 3)); # rotation.shape = (N_res, 3,3)
+  translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
+  q_scalar = tf.keras.layers.Dense(num_head * num_scalar_qk, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(inputs_1d); # q_scalar.shape = (N_res, num_head * num_scalar_qk)
+  q_scalar = tf.keras.layers.Reshape((num_head, num_scalar_qk))(q_scalar); # q_scalar.shape = (N_res, num_head, num_scalar_qk)
+  kv_scalar = tf.keras.layers.Dense(num_head * (num_scalar_v + num_scalar_qk), kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(inputs_1d); # kv_scalar.shape = (N_res, num_head * (num_scalar_v + num_scalar_qk))
+  kv_scalar = tf.keras.layers.Reshape((num_head, num_scalar_v + num_scalar_qk))(kv_scalar); # kv_scalar.shape = (N_res, num_head, num_scalar_v + num_scalar_qk)
+  k_scalar, v_scalar = tf.keras.layers.Lambda(lambda x, n: tf.split(x, [n,], axis = -1), arguments = {'n': num_scalar_qk})(kv_scalar); # k_scalar.shape = (N_res, num_head, num_scalar_qk), v_scalar.shape = (N_res, num_head, num_scalar_v)
+  q_point_local = tf.keras.layers.Dense(num_head * 3 * num_point_qk, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(inputs_1d); # q_point_local.shape = (N_res, num_head * 3 * num_point_qk)
+  q_point_local = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, 3)))(q_point_local); # q_point_local.shape = (num_head * num_point_qk, 3)
+  q_point_global = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[1], x[0], transpose_b = True) + tf.expand_dims(x[2], axis = -1))([q_point_local, rotation, translation]); # q_point_global.shape = (N_res, 3, num_head * num_point_qk)
+  q_point_global = tf.keras.layers.Lambda(lambda x, h, p: tf.reshape(tf.transpose(x, (1,0,2)), (3, tf.shape(x)[0], h, p)), arguments = {'h': num_head, 'p': num_point_qk})(q_point_global); # q_point.global.shape = (3, N_res, num_head, num_point_qk)
+  kv_point_local = tf.keras.layers.Dense(num_head * 3 * (num_point_qk + num_point_v), kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(inputs_1d); # kv_point_local.shape = (N_res, num_head * 3 * (num_point_qk + num_point_v))
+  kv_point_local = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, 3)))(kv_point_local); # kv_point_local.shape = (num_head * (num_point_qk + num_point_v), 3)
+  kv_point_global = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[1], x[0], transpose_b = True) + tf.expand_dims(x[2], axis = 1))([kv_point_local, rotation, translation]); # kv_point_globa.shape = (N_res, 3, num_head * (num_point_qk + num_point_v))
+  kv_point_global = tf.keras.layers.Lambda(lambda x, h, p, v: tf.reshape(tf.transpose(x, (1,0,2)), (3, tf.shape(x)[0], h, p + v)), arguments = {'h': num_head, 'p': num_point_qk, 'v': num_point_v}); # kv_point_global.shape = (3, N_res, num_head, num_point_qk + num_point_v)
+  k_point, v_point = tf.keras.layers.Lambda(lambda x, n: tf.split(x, [n,], axis = -1), arguments = {'n': num_point_qk})(kv_point_global); # k_point.shape = (3, N_res, num_head, num_point_qk), v_point.shape = (3, N_res, num_head, num_point_v)
+  v_point = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1,3)))(v_point); # v_point.shape = (3, num_head, N_res, num_point_v)
+  q_point = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1,3)))(q_point_global); # q_point.shape = (3, num_head, N_res, num_point_qk)
+  k_point = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1,3)))(k_point); # k_point.shape = (3, num_head, N_res, num_point_qk)
+  dist2 = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.math.square(tf.expand_dims(x[0], axis = 3) - tf.expand_dims(x[1], axis = 2)), axis = 0))([q_point, k_point]); # dist2.shape = (num_head, N_res, N_res, num_point_qk)
+  
+
+def FoldIteration(num_channel = 384):
+  act = tf.keras.Input((num_channel,)); # act.shape = (N_res, num_channel)
+  affine = tf.keras.Input((7,)); # affine.shape = (N_res, 7)
+  normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
+  rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res,3,3)
+  # TODO
+
+def StructureModule(seq_channel = 384, pair_channel = 128, num_channel = 384):
   seq_mask = tf.keras.Input(()); # seq_mask.shape = (N_res)
-  single = tf.keras.Input(()); # single.shape = (N_res, seq_channel)
+  single = tf.keras.Input((seq_channel,)); # single.shape = (N_res, seq_channel)
+  pair = tf.keras.Input((None, pair_channel)); # pair.shape = (N_res, N_res, pair_channel)
   sequence_mask = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(seq_mask);
   act = tf.keras.layers.LayerNormalization()(single); # act.shape = (N_Res, seq_channel)
   initial_act = act;
   act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
   quaternion = tf.keras.layers.Lambda(lambda x: tf.tile(tf.expand_dims([1.,0.,0.,0.], axis = 0), (tf.shape(x)[0], 1)))(sequence_mask); # quaternion.shape = (N_res, 4)
   translation = tf.keras.layers.Lambda(lambda x: tf.zeros((tf.shape(x)[0], 3)))(sequence_mask); # translation.shape = (N_res, 3)
+  normalized_quat = tf.keras.layers.Lambda(lambda x: x / tf.norm(x, axis = -1, keepdims = True))(quaternion); # quaternion.shape = (N_res, 4)
+  affine = tf.keras.layers.Concatenate(axis = -1)([normalized_quat, translation]); # affine.shape = (N_res, 7);
+  act_2d = tf.keras.layers.LayerNormalization()(pair); # act_2d.shape = (N_res, N_res, pair_channel)
   
 
 def PredictedLDDTHead(c_s, num_channels = 128, num_bins = 50, **kwargs):
@@ -386,18 +425,18 @@ def rot_to_quat(unstack_inputs = False):
   return tf.keras.Model(inputs = inputs, outputs = qs);
 
 def quat_to_rot():
-  normalized_quat = tf.keras.Input((atom_type_num, 4)); # normalized_quat.shape = (N_template, atom_type_num, 4)
+  normalized_quat = tf.keras.Input((4,)); # normalized_quat.shape = (N_res, 4)
   QUAT_TO_ROT = tf.keras.layers.Lambda(lambda x: tf.stack([tf.stack([[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]], [[0.,0.,0.],[0.,0.,-2.],[0.,2.,0.]], [[0.,0.,2.],[0.,0.,0.],[-2.,0.,0.]], [[0.,-2.,0.],[2.,0.,0.],[0.,0.,0.]]], axis = 0),
                                                            tf.stack([[[0.,0.,0.],[0.,0.,0.],[0.,0.,0.]], [[1.,0.,0.],[0.,-1.,0.],[0.,0.,-1.]], [[0.,2.,0.],[2.,0.,0.],[0.,0.,0.]], [[0.,0.,2.],[0.,0.,0.],[2.,0.,0.]]], axis = 0),
                                                            tf.stack([[[0.,0.,0.],[0.,0.,0.],[0.,0.,0.]], [[0.,0.,0.],[0.,0.,0.],[0.,0.,0.]], [[-1.,0.,0.],[0.,1.,0.],[0.,0.,-1.]], [[0.,0.,0.],[0.,0.,2.],[0.,2.,0.]]], axis = 0),
                                                            tf.stack([[[0.,0.,0.],[0.,0.,0.],[0.,0.,0.]], [[0.,0.,0.],[0.,0.,0.],[0.,0.,0.]], [[0.,0.,0.],[0.,0.,0.],[0.,0.,0.]], [[-1.,0.,0.],[0.,-1.,0.],[0.,0.,1.]]], axis = 0),], axis = 0))(normalized_quat); # QUAT_TO_ROT.shape = (4,4,3,3)
   rot_tensor = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(
                                                   tf.reshape(x[0], (4,4,9)) * 
-                                                  tf.reshape(x[1], (tf.shape(x[1])[0], x[1].shape[1], x[1].shape[2], 1, 1)) *
-                                                  tf.reshape(x[1], (tf.shape(x[1])[0], x[1].shape[1], 1, x[1].shape[2], 1)),
+                                                  tf.reshape(x[1], (tf.shape(x[1])[0], x[1].shape[1], 1, 1)) * # shape = (N_res, 4, 1, 1)
+                                                  tf.reshape(x[1], (tf.shape(x[1])[0], 1, x[1].shape[1], 1)),  # shape = (N_res, 1, 4, 1)
                                                   axis = (-3, -2)
-                                                ))([QUAT_TO_ROT, normalized_quat]); # rot_tensor.shape = (N_template, atom_type_num, 9)
-  rot = tf.keras.layers.Lambda(lambda x: tf.reshape(tf.transpose(x, (2, 0, 1)), (3,3,tf.shape(x)[0],tf.shape(x)[1])))(rot_tensor); # rot.shape = (3, 3, N_template, atom_type_num)
+                                                ))([QUAT_TO_ROT, normalized_quat]); # rot_tensor.shape = (N_res, 9)
+  rot = tf.keras.layers.Reshape((3,3))(rot_tensor); # rot.shape = (N_res, 3, 3)
   return tf.keras.Model(inputs = normalized_quat, outputs = rot);
 
 def invert_point(extra_dims = 0):
@@ -670,7 +709,7 @@ if __name__ == "__main__":
   rot = np.random.normal(size = (3, 3, 4));
   quat = rot_to_quat(False)(rot);
   print(quat.shape);
-  quat = np.random.normal(size = (4, atom_type_num, 4)); #N_template, atom_type_num, 4
+  quat = np.random.normal(size = (10, 4)); #N_template, atom_type_num, 4
   rot = quat_to_rot()(quat);
   print(rot.shape);
   points = np.random.normal(size = (3,1,4));
