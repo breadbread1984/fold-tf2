@@ -275,9 +275,10 @@ def InvariantPointAttention(
   result_point_global = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1,3)))(result_point_global); # result_point_global.shape = (3, N_res, num_head, num_point_v)
   result_scalar = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (tf.shape(x)[0],-1)))(result_scalar); # result_scalar.shape = (N_res, num_head * num_scalar_v)
   result_point_global = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (3, tf.shape(x)[1], -1)))(result_point_global); # result_point_global.shape = (3, N_res, num_head * num_point_v)
-  result_point_local = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, result_point_global]); # result_point_local.shape = ()
+  result_point_local = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, result_point_global]); # result_point_local.shape = (3, num_head * num_point_v)
+  
   # TODO
-  return tf.keras.Model(inputs = (), outputs = (result_scalar));
+  return tf.keras.Model(inputs = (), outputs = (result_scalar, result_point_local));
 
 def FoldIteration(num_channel = 384):
   act = tf.keras.Input((num_channel,)); # act.shape = (N_res, num_channel)
@@ -493,13 +494,13 @@ def invert_point(unstack_inputs = False, extra_dims = 0):
     rotation = tf.keras.Input((3, None), batch_size = 3); # rotation.shape = (3, 3, N_res)
     translation = tf.keras.Input((None,), batch_size = 3); # translation.shape = (3, N_res)
     inputs = [rotation, translation];
-  transformed_points = tf.keras.Input((1, None), batch_size = 3); # points.shape = (3, 1, N_res)
+  transformed_points = tf.keras.Input((None, None), batch_size = 3); # points.shape = (3, 1 or N_res, None)
   inputs.append(transformed_points);
   for _ in range(extra_dims):
     rotation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(rotation); # rotation.shape = (3, 3, N_res, 1)
     translation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(translation); # translation.shape = (3, N_res, 1)
-  rot_point = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([transformed_points, translation]); # rot_point.shape = (3, N_res, N_res)
-  results = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], x[1], transpose_a = True), axis = -1))([rot_point, translation]); # results.shape = (3, N_res)
+  rot_point = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([transformed_points, translation]); # rot_point.shape = (3, N_res, None)
+  results = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], x[1], transpose_a = True), axis = -1))([rot_point, translation]); # results.shape = (3, None)
   return tf.keras.Model(inputs = inputs, outputs = results);
 
 def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39):
