@@ -303,7 +303,7 @@ def StructureModule(seq_channel = 384, pair_channel = 128, num_channel = 384):
   normalized_quat = tf.keras.layers.Lambda(lambda x: x / tf.norm(x, axis = -1, keepdims = True))(quaternion); # quaternion.shape = (N_res, 4)
   affine = tf.keras.layers.Concatenate(axis = -1)([normalized_quat, translation]); # affine.shape = (N_res, 7);
   act_2d = tf.keras.layers.LayerNormalization()(pair); # act_2d.shape = (N_res, N_res, pair_channel)
-  
+  # TODO
 
 def PredictedLDDTHead(c_s, num_channels = 128, num_bins = 50, **kwargs):
   act = tf.keras.Input((c_s,)); # act.shape = (N_res, c_s)
@@ -540,11 +540,12 @@ def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39)
   translation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(trans); # translation.shape = (3, N_res)
   rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,2,0)))(rot); # rotation.shape = (3,3,N_res)
   points = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -2))(translation); # points.shape = (3, 1, N_res)
-  affine_vec = invert_point(extra_dims = 1)([rotation, translation, points]); # affine_vec.shape = (3, N_res)
-  inv_distance_scalar = tf.keras.layers.Lambda(lambda x: tf.math.rsqrt(1e-6 + tf.math.reduce_sum(tf.math.square(x), axis = 0)))(affine_vec); # inv_distance_scalar.shape = (N_res)
+  affine_vec = invert_point(extra_dims = 1)([rotation, translation, points]); # affine_vec.shape = (3, N_res, N_res)
+  inv_distance_scalar = tf.keras.layers.Lambda(lambda x: tf.math.rsqrt(1e-6 + tf.math.reduce_sum(tf.math.square(x), axis = 0)))(affine_vec); # inv_distance_scalar.shape = (N_res, N_res)
   template_mask = tf.keras.layers.Lambda(lambda x, n, ca, c: x[..., n] * x[..., ca] * x[..., c], 
                                          arguments = {'n': residue_constants.atom_order['N'], 'ca': residue_constants.atom_order['CA'], 'c': residue_constants.atom_order['C']})(template_all_atom_masks); # template_mask.shape = (N_res)
   template_mask_2d = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = 1) * tf.expand_dims(x, axis = 0))(template_mask); # template_mask_2d.shape = (N_res, N_res)
+  inv_distance_scalar = tf.keras.layers.Lambda(lambda x: x[0] * tf.cast(x[1], dtype = x[0].dtype))([inv_distance_scalar, template_mask_2d]); # inv_distance_scalar.shape = (N_res, N_res)
   # TODO
 
 def TemplateEmbedding(c_z):
