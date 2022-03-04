@@ -214,10 +214,10 @@ class AttentionQK(tf.keras.layers.Layer):
     self.num_point_qk = num_point_qk;
     super(AttentionQK, self).__init__(**kwargs);
   def build(self, input_shape):
-    self.point_weights = self.add_weights(shape = (self.num_head,), dtype = tf.float32, trainable = True, initializer = tf.keras.initializers.Constant(np.log(np.exp(1.) - 1.)), name = 'trainable_point_weights');
+    self.point_weights = self.add_weight(shape = (self.num_head,), dtype = tf.float32, trainable = True, initializer = tf.keras.initializers.Constant(np.log(np.exp(1.) - 1.)), name = 'trainable_point_weights');
   def call(self, inputs):
     # inputs.shape = (num_head, N_res, N_res, num_point_qk)
-    point_variance = tf.maximum(self.num_point_qk, 1) * 9. / 2; # point_variance.shape = ()
+    point_variance = tf.cast(tf.maximum(self.num_point_qk, 1), dtype = tf.float32) * 9. / 2; # point_variance.shape = ()
     point_weights = tf.sqrt(1. / (3 * point_variance)); # point_weights.shape = ()
     point_weights = point_weights * tf.expand_dims(self.point_weights, axis = 1); # point_weights.shape = (num_head, 1)
     attn_qk_point = -0.5 * tf.math.reduce_sum(tf.reshape(point_weights, (self.num_head, 1, 1, 1)) * inputs, axis = -1); # attn_qk_point.shape = (num_head, N_res, N_res)
