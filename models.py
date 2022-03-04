@@ -281,7 +281,7 @@ def InvariantPointAttention(
   result_attention_over_2d = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(tf.transpose(x[0], (1,0,2)), x[1]))([attn, inputs_2d]); # result_attention_over_2d.shape = (N_res, num_head, pair_channel)
   result_attention_over_2d = tf.keras.layers.Flatten()(result_attention_over_2d); # result_attention_over_2d.shape = (N_res, num_head * pair_channel)
   final_act = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], x[1][0], x[1][1], x[1][2], x[2], x[3]], axis = -1))([result_scalar, result_point_local, result_dist_local, result_attention_over_2d]); # final_act.shape = (N_res, num_head * num_scalar_v + 4 * num_head * num_point_v + num_head * pair_channel)
-  return tf.keras.Model(inputs = (), outputs = final_act);
+  return tf.keras.Model(inputs = (inputs_1d, inputs_2d, mask, rotation, translation), outputs = final_act);
 
 def FoldIteration(num_channel = 384):
   act = tf.keras.Input((num_channel,)); # act.shape = (N_res, num_channel)
@@ -779,3 +779,10 @@ if __name__ == "__main__":
   translation = np.random.normal(size = (3, 4));
   results = invert_point(extra_dims = 1)([rotation, translation, points]);
   print(results.shape);
+  inputs_1d = np.random.normal(size = (4, 12));
+  inputs_2d = np.random.normal(size = (4, 4, 128));
+  mask = np.random.normal(size = (4,1));
+  rotation = np.random.normal(size = (4,3,3));
+  translation = np.random.normal(size = (4,3));
+  final_act = InvariantPointAttention()([inputs_1d, inputs_2d, mask, rotation, translation]);
+  print(final_act.shape);
