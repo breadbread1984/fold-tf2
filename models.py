@@ -266,7 +266,10 @@ def InvariantPointAttention(
   attention_2d = tf.keras.layers.Dense(num_head, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(inputs_2d); # attention_2d.shape = (N_res, N_res, num_head)
   attention_2d = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,0,1)))(attention_2d); # attention_2d.shape = (num_head, N_res, N_res)
   attn_logits = tf.keras.layers.Add()([attn_logits, attention_2d]); # attn_logits.shape = (num_head, N_res, N_res)
-  
+  mask_2d = tf.keras.layers.Lambda(lambda x: x * tf.transpose(x, (1,0)))(mask); # mask_2d.shape = (N_res, N_res)
+  attn_logits = tf.keras.layers.Lambda(lambda x: x[0] - 1e5 * (1. - x[1]))([attn_logits, mask_2d]); # attn_logits.shape = (num_head, N_res, N_res)
+  attn = tf.keras.layers.Softmax()(attn_logits); # attn.shape = (num_head, N_res, N_res)
+  result_scalar = tf.keras.layers.Lambda()();
 
 def FoldIteration(num_channel = 384):
   act = tf.keras.Input((num_channel,)); # act.shape = (N_res, num_channel)
