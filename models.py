@@ -262,7 +262,7 @@ def InvariantPointAttention(
   v = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(v_scalar); # v.shape = (num_head, N_res, num_scalar_v)
   q = tf.keras.layers.Lambda(lambda x, w: tf.transpose(w*x, (1,0,2)), arguments = {'w': np.sqrt(1./ (3 * max(num_scalar_qk, 1)))})(q_scalar); # q.shape = (num_head, N_res, num_scalar_qk)
   k = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(k_scalar); # k.shape = (num_head, N_res, num_scalar_qk)
-  attn_qk_scalar = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(q, k, transpose_b = True))([q,k]); # attn_qk_scalar.shape = (num_head, N_res, N_res)
+  attn_qk_scalar = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1], transpose_b = True))([q,k]); # attn_qk_scalar.shape = (num_head, N_res, N_res)
   attn_logits = tf.keras.layers.Add()([attn_qk_scalar, attn_qk_point]); # attn_logits.shape = (num_head, N_res, N_res)
   attention_2d = tf.keras.layers.Dense(num_head, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(inputs_2d); # attention_2d.shape = (N_res, N_res, num_head)
   attention_2d = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,0,1)))(attention_2d); # attention_2d.shape = (num_head, N_res, N_res)
@@ -779,7 +779,7 @@ if __name__ == "__main__":
   translation = np.random.normal(size = (3, 4));
   results = invert_point(extra_dims = 1)([rotation, translation, points]);
   print(results.shape);
-  inputs_1d = np.random.normal(size = (4, 12));
+  inputs_1d = np.random.normal(size = (4, 384));
   inputs_2d = np.random.normal(size = (4, 4, 128));
   mask = np.random.normal(size = (4,1));
   rotation = np.random.normal(size = (4,3,3));
