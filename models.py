@@ -208,6 +208,29 @@ def MaskedMsaHead(c_m, num_output = 23, **kwargs):
   logits = tf.keras.layers.Dense(num_output, kernel_initializer = tf.keras.initializers.Zeros())(msa);
   return tf.keras.Model(inputs = msa, outputs = logits, **kwargs);
 
+class AttentionQK(tf.keras.layers.Layer):
+  def __init__(self, num_head = 4, num_point_qk = 4, **kwargs):
+    self.num_head = 4;
+    self.num_point_qk = num_point_qk;
+    super(WeightedOutput, self).__init__(**kwargs);
+  def build(self, input_shape):
+    self.point_weights = self.add_weights(shape = (self.num_head,), dtype = tf.float32, trainable = True, initializer = tf.keras.initializers.Constant(np.log(np.exp(1.) - 1.)), name = 'trainable_point_weights');
+  def call(self, inputs):
+    # inputs.shape = (num_head, N_res, N_res, num_point_qk)
+    point_variance = tf.maximum(self.num_point_qk, 1) * 9. / 2; # point_variance.shape = ()
+    point_weights = tf.sqrt(1. / (3 * point_variance)); # point_weights.shape = ()
+    point_weights = point_weights * tf.expand_dims(self.point_weights, axis = 1); # point_weights.shape = (num_head, 1)
+    attn_qk_point = -0.5 * tf.math.reduce_sum(tf.reshape(point_weights, (self.num_head, 1, 1, 1)) * inputs, axis = -1); # attn_qk_point.shape = (num_head, N_res, N_res)
+    return attn_qk_point;
+  def get_config(self):
+    config = super(WeightedOutput, self).get_config();
+    config['num_head'] = self.num_head;
+    config['num_point_qk'] = self.num_point_qk;
+    return config;
+  @classmethod
+  def from_config(cls, config):
+    return cls(**config);
+
 def InvariantPointAttention(
     pair_channel = 128, num_channel = 384,
     num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8):
@@ -234,6 +257,15 @@ def InvariantPointAttention(
   q_point = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1,3)))(q_point_global); # q_point.shape = (3, num_head, N_res, num_point_qk)
   k_point = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1,3)))(k_point); # k_point.shape = (3, num_head, N_res, num_point_qk)
   dist2 = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.math.square(tf.expand_dims(x[0], axis = 3) - tf.expand_dims(x[1], axis = 2)), axis = 0))([q_point, k_point]); # dist2.shape = (num_head, N_res, N_res, num_point_qk)
+  attn_qk_point = AttentionQK(num_head, num_point_qk)(dist2); # attn_qk_point.shape = (num_head, N_res, N_res)
+  v = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(v_scalar); # v.shape = (num_head, N_res, num_scalar_v)
+  q = tf.keras.layers.Lambda(lambda x, w: tf.transpose(w*x, (1,0,2)), arguments = {'w': np.sqrt(1./ (3 * max(num_scalar_qk, 1)))})(q_scalar); # q.shape = (num_head, N_res, num_scalar_qk)
+  k = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(k_scalar); # k.shape = (num_head, N_res, num_scalar_qk)
+  attn_qk_scalar = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(q, k, transpose_b = True))([q,k]); # attn_qk_scalar.shape = (num_head, N_res, N_res)
+  attn_logits = tf.keras.layers.Add()([attn_qk_scalar, attn_qk_point]); # attn_logits.shape = (num_head, N_res, N_res)
+  attention_2d = tf.keras.layers.Dense(num_head, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(inputs_2d); # attention_2d.shape = (N_res, N_res, num_head)
+  attention_2d = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,0,1)))(attention_2d); # attention_2d.shape = (num_head, N_res, N_res)
+  attn_logits = tf.keras.layers.Add()([attn_logits, attention_2d]); # attn_logits.shape = (num_head, N_res, N_res)
   
 
 def FoldIteration(num_channel = 384):
