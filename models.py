@@ -269,7 +269,15 @@ def InvariantPointAttention(
   mask_2d = tf.keras.layers.Lambda(lambda x: x * tf.transpose(x, (1,0)))(mask); # mask_2d.shape = (N_res, N_res)
   attn_logits = tf.keras.layers.Lambda(lambda x: x[0] - 1e5 * (1. - x[1]))([attn_logits, mask_2d]); # attn_logits.shape = (num_head, N_res, N_res)
   attn = tf.keras.layers.Softmax()(attn_logits); # attn.shape = (num_head, N_res, N_res)
-  result_scalar = tf.keras.layers.Lambda()();
+  result_scalar = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([attn, v]); # result_scalar.shape = (num_head, N_res, num_scalar_v)
+  result_point_global = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.expand_dims(x[1], axis = 2) * tf.expand_dims(tf.expand_dims(x[0], axis = 0), axis = -1), axis = -2))([attn, v_point]); # result_point_global.shape = (3, num_head, N_res, num_point_v)
+  result_scalar = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(result_scalar); # result_scalar.shape = (N_res, num_head, num_scalar_v)
+  result_point_global = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1,3)))(result_point_global); # result_point_global.shape = (3, N_res, num_head, num_point_v)
+  result_scalar = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (tf.shape(x)[0],-1)))(result_scalar); # result_scalar.shape = (N_res, num_head * num_scalar_v)
+  result_point_global = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (3, tf.shape(x)[1], -1)))(result_point_global); # result_point_global.shape = (3, N_res, num_head * num_point_v)
+  result_point_local = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, result_point_global]); # result_point_local.shape = ()
+  # TODO
+  return tf.keras.Model(inputs = (), outputs = (result_scalar));
 
 def FoldIteration(num_channel = 384):
   act = tf.keras.Input((num_channel,)); # act.shape = (N_res, num_channel)
@@ -474,11 +482,19 @@ def quat_to_rot():
   rot = tf.keras.layers.Reshape((3,3))(rot_tensor); # rot.shape = (N_res, 3, 3)
   return tf.keras.Model(inputs = normalized_quat, outputs = rot);
 
-def invert_point(extra_dims = 0):
-  rotation = tf.keras.Input((3, None), batch_size = 3); # rotation.shape = (3, 3, N_res)
-  translation = tf.keras.Input((None,), batch_size = 3); # translation.shape = (3, N_res)
+def invert_point(unstack_inputs = False, extra_dims = 0):
+  if unstack_inputs:
+    rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
+    translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
+    inputs = [rotation, translation];
+    rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,2,0)))(rotation); # rotation.shape = (3,3,N_res)
+    translation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(translation); # translation.shape = (3, N_res)
+  else:
+    rotation = tf.keras.Input((3, None), batch_size = 3); # rotation.shape = (3, 3, N_res)
+    translation = tf.keras.Input((None,), batch_size = 3); # translation.shape = (3, N_res)
+    inputs = [rotation, translation];
   transformed_points = tf.keras.Input((1, None), batch_size = 3); # points.shape = (3, 1, N_res)
-  inputs = (rotation, translation, transformed_points);
+  inputs.append(transformed_points);
   for _ in range(extra_dims):
     rotation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(rotation); # rotation.shape = (3, 3, N_res, 1)
     translation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(translation); # translation.shape = (3, N_res, 1)
