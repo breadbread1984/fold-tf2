@@ -212,7 +212,7 @@ class AttentionQK(tf.keras.layers.Layer):
   def __init__(self, num_head = 4, num_point_qk = 4, **kwargs):
     self.num_head = num_head;
     self.num_point_qk = num_point_qk;
-    super(WeightedOutput, self).__init__(**kwargs);
+    super(AttentionQK, self).__init__(**kwargs);
   def build(self, input_shape):
     self.point_weights = self.add_weights(shape = (self.num_head,), dtype = tf.float32, trainable = True, initializer = tf.keras.initializers.Constant(np.log(np.exp(1.) - 1.)), name = 'trainable_point_weights');
   def call(self, inputs):
@@ -223,7 +223,7 @@ class AttentionQK(tf.keras.layers.Layer):
     attn_qk_point = -0.5 * tf.math.reduce_sum(tf.reshape(point_weights, (self.num_head, 1, 1, 1)) * inputs, axis = -1); # attn_qk_point.shape = (num_head, N_res, N_res)
     return attn_qk_point;
   def get_config(self):
-    config = super(WeightedOutput, self).get_config();
+    config = super(AttentionQK, self).get_config();
     config['num_head'] = self.num_head;
     config['num_point_qk'] = self.num_point_qk;
     return config;
