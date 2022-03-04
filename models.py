@@ -486,6 +486,21 @@ def quat_to_rot():
   rot = tf.keras.layers.Reshape((3,3))(rot_tensor); # rot.shape = (N_res, 3, 3)
   return tf.keras.Model(inputs = normalized_quat, outputs = rot);
 
+def apply_to_point(unstack_inputs = False, extra_dims = 0):
+  if unstack_inputs:
+    rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
+    translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
+    inputs = [rotation, translation];
+    rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,2,0)))(rotation); # rotation.shape = (3,3,N_res)
+    translation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(translation); # translation.shape = (3, N_res)
+  else:
+    rotation = tf.keras.Input((3, None), batch_size = 3); # rotation.shape = (3, 3, N_res)
+    translation = tf.keras.Input((None,), batch_size = 3); # translation.shape = (3, N_res)
+    inputs = [rotation, translation];
+  point = tf.keras.Input((None,), batch_size = 3); # point.shape = (3, None)
+  inputs.append(point);
+  # TODO
+
 def invert_point(unstack_inputs = False, extra_dims = 0):
   if unstack_inputs:
     rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
