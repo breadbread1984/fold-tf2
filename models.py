@@ -208,6 +208,17 @@ def MaskedMsaHead(c_m, num_output = 23, **kwargs):
   logits = tf.keras.layers.Dense(num_output, kernel_initializer = tf.keras.initializers.Zeros())(msa);
   return tf.keras.Model(inputs = msa, outputs = logits, **kwargs);
 
+def StructureModule(num_channel = 384):
+  seq_mask = tf.keras.Input(()); # seq_mask.shape = (N_res)
+  single = tf.keras.Input(()); # single.shape = (N_res, seq_channel)
+  sequence_mask = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(seq_mask);
+  act = tf.keras.layers.LayerNormalization()(single); # act.shape = (N_Res, seq_channel)
+  initial_act = act;
+  act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
+  quaternion = tf.keras.layers.Lambda(lambda x: tf.tile(tf.expand_dims([1.,0.,0.,0.], axis = 0), (tf.shape(x)[0], 1)))(sequence_mask); # quaternion.shape = (N_res, 4)
+  translation = tf.keras.layers.Lambda(lambda x: tf.zeros((tf.shape(x)[0], 3)))(sequence_mask); # translation.shape = (N_res, 3)
+  
+
 def PredictedLDDTHead(c_s, num_channels = 128, num_bins = 50, **kwargs):
   act = tf.keras.Input((c_s,)); # act.shape = (N_res, c_s)
   inputs = (act,);
@@ -389,19 +400,11 @@ def quat_to_rot():
   rot = tf.keras.layers.Lambda(lambda x: tf.reshape(tf.transpose(x, (2, 0, 1)), (3,3,tf.shape(x)[0],tf.shape(x)[1])))(rot_tensor); # rot.shape = (3, 3, N_template, atom_type_num)
   return tf.keras.Model(inputs = normalized_quat, outputs = rot);
 
-def invert_point(unstack_inputs = False, extra_dims = 0):
-  if not unstack_inputs:
-    rotation = tf.keras.Input((3, 3)); # rotation.shape = (N_res, 3, 3)
-    translation = tf.keras.Input((3)); # translation.shape = (N_res, 3)
-    inputs = [rotation, translation];
-    rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,2,0)))(rotation); # rotation.shape = (3,3,N_res)
-    translation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(translation); # translation.shape = (3, N_res)
-  else:
-    rotation = tf.keras.Input((3, None), batch_size = 3); # rotation.shape = (3, 3, N_res)
-    translation = tf.keras.Input((None,), batch_size = 3); # translation.shape = (3, N_res)
-    inputs = [rotation, translation];
+def invert_point(extra_dims = 0):
+  rotation = tf.keras.Input((3, None), batch_size = 3); # rotation.shape = (3, 3, N_res)
+  translation = tf.keras.Input((None,), batch_size = 3); # translation.shape = (3, N_res)
   transformed_points = tf.keras.Input((1, None), batch_size = 3); # points.shape = (3, 1, N_res)
-  inputs.append(transformed_points);
+  inputs = (rotation, translation, transformed_points);
   for _ in range(extra_dims):
     rotation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(rotation); # rotation.shape = (3, 3, N_res, 1)
     translation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(translation); # translation.shape = (3, N_res, 1)
@@ -437,7 +440,7 @@ def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39)
   translation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(trans); # translation.shape = (3, N_res)
   rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,2,0)))(rot); # rotation.shape = (3,3,N_res)
   points = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -2))(translation); # points.shape = (3, 1, N_res)
-  affine_vec = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, points]); # affine_vec.shape = (3, N_res)
+  affine_vec = invert_point(extra_dims = 1)([rotation, translation, points]); # affine_vec.shape = (3, N_res)
   inv_distance_scalar = tf.keras.layers.Lambda(lambda x: tf.math.rsqrt(1e-6 + tf.math.reduce_sum(tf.math.square(x), axis = 0)))(affine_vec); # inv_distance_scalar.shape = (N_res)
   template_mask = tf.keras.layers.Lambda(lambda x, n, ca, c: x[..., n] * x[..., ca] * x[..., c], 
                                          arguments = {'n': residue_constants.atom_order['N'], 'ca': residue_constants.atom_order['CA'], 'c': residue_constants.atom_order['C']})(template_all_atom_masks); # template_mask.shape = (N_res)
@@ -670,12 +673,8 @@ if __name__ == "__main__":
   quat = np.random.normal(size = (4, atom_type_num, 4)); #N_template, atom_type_num, 4
   rot = quat_to_rot()(quat);
   print(rot.shape);
-  rotation = np.random.normal(size = (4, 3, 3));
-  translation = np.random.normal(size = (4, 3));
   points = np.random.normal(size = (3,1,4));
-  results = invert_point(unstack_inputs = False, extra_dims = 1)([rotation, translation, points]);
-  print(results.shape);
   rotation = np.random.normal(size = (3, 3, 4));
   translation = np.random.normal(size = (3, 4));
-  results = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, points]);
+  results = invert_point(extra_dims = 1)([rotation, translation, points]);
   print(results.shape);
