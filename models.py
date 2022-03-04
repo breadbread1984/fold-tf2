@@ -523,7 +523,9 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   return tf.keras.Model(inputs = inputs,
                         outputs = (single_activations, pair_activations, msa, single_msa_activations));
 
-def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384):
+def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
+                       head_masked_msa_output_num = 23,
+                       head_distogram_first_break = 2.3125, head_distogram_last_break = 21.6875, head_distogram_num_bins = 64, head_distogram_weight = 0.3):
   target_feat = tf.keras.Input((None, c_m,), batch_siz = num_ensemble); # target_feat.shape = (num_ensemble, N_res, c_m)
   msa_feat = tf.keras.Input((None, None, c_z), batch_siz = num_ensemble); # msa_feat.shape = (num_ensemble, N_seq, N_res, c_z)
   msa_mask = tf.keras.Input((None, None,), batch_siz = num_ensemble); # msa_mask.shape = (num_ensemble, N_seq, N_res)
@@ -572,8 +574,11 @@ def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_re
     single_msa_activations = tf.keras.layers.Lambda(lambda x, b: x / b, arguments = {'b': num_ensemble})(single_msa_activations);
   else:
     single_activations, pair_activations, msa, single_msa_activations = representation_update;
+  batch = batch0_inputs;
   # single_msa_activations.shape = (N_res, msa_channel), pair_activations.shape = (N_seq, N_res, pair_channel), msa.shape = (N_seq, N_res, msa_channel), single_activations.shape = (N_res, seq_channel)
   # connect to heads
+  masked_msa = MaskedMsaHead(msa_channel, head_masked_msa_output_num)(msa); # masked_msa.shape = (N_seq, N_seq, head_masked_msa_output_num);
+  distogram_logits, distogram_breaks = DistogramHead(pair_channel, head_distogram_num_bins, head_distogram_first_break, head_distogram_last_break)(pair_activations); # distogram_logits.shape = (N_res, N_res, head_distogram_num_bins)
   
 
 if __name__ == "__main__":
