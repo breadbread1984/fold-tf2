@@ -501,7 +501,7 @@ def apply_to_point(unstack_inputs = False, extra_dims = 0):
   inputs.append(point);
   for _ in range(extra_dims):
     rotation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(rotation); # rotation.shape = [3, 3, N_res,] +  [1,] * extra_dims
-    translation = tf.keras.layers.Lamda(lambda x: tf.expand_dims(x, axis = -1))(translation); # translation.shape = [3, N_res, ] + [1,] * extra_dims
+    translation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(translation); # translation.shape = [3, N_res, ] + [1,] * extra_dims
   # NOTE: transpose to make matmul convenient, the following two lines are not present in original code
   perm = [i for i in range(3 + extra_dims)];
   perm = perm[2:] + perm[:2];
@@ -510,7 +510,7 @@ def apply_to_point(unstack_inputs = False, extra_dims = 0):
   perm = perm[1:] + perm[:1];
   point = tf.keras.layers.Lambda(lambda x, p: tf.transpose(x, p), arguments = {'p': perm})(point); # point.shape = [N_res] + [None,] * extra_dims + [3]
   
-  rot_point = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], tf.exapnd_dims(x[1], axis = -1)), axis = -1))([rotation, point]); # rot_point.shape = [N_res,] + [None,] * extra_dims + [3]
+  rot_point = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[1], axis = -1)), axis = -1))([rotation, point]); # rot_point.shape = [N_res,] + [None,] * extra_dims + [3]
   # NOTE: this line is make the result have the same shape as the original code
   perm = [i for i in range(2 + extra_dims)];
   perm = perm[-1:] + perm[:-1];
@@ -817,8 +817,12 @@ if __name__ == "__main__":
   translation = np.random.normal(size = (3, 4));
   results = invert_point(extra_dims = 1)([rotation, translation, points]);
   print('extra_dims = 1:', results.shape);
+  results = apply_to_point(extra_dims = 1)([rotation, translation, points]);
+  print('extra_dims = 1:', results.shape);
   points = np.random.normal(size = (3,1,5,6));
   results = invert_point(extra_dims = 2)([rotation, translation, points]);
+  print('extra_dims = 2:', results.shape);
+  results = apply_to_point(extra_dims = 2)([rotation, translation, points]);
   print('extra_dims = 2:', results.shape);
   inputs_1d = np.random.normal(size = (4, 384));
   inputs_2d = np.random.normal(size = (4, 4, 128));
