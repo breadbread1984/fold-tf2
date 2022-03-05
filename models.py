@@ -250,6 +250,8 @@ def InvariantPointAttention(
   q_point_global = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[1], x[0], transpose_b = True) + tf.expand_dims(x[2], axis = -1))([q_point_local, rotation, translation]); # q_point_global.shape = (N_res, 3, num_head * num_point_qk)
   q_point_global = tf.keras.layers.Lambda(lambda x, h, p: tf.reshape(tf.transpose(x, (1,0,2)), (3, tf.shape(x)[0], h, p)), arguments = {'h': num_head, 'p': num_point_qk})(q_point_global); # q_point.global.shape = (3, N_res, num_head, num_point_qk)
   kv_point_local = tf.keras.layers.Dense(num_head * 3 * (num_point_qk + num_point_v), kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(inputs_1d); # kv_point_local.shape = (N_res, num_head * 3 * (num_point_qk + num_point_v))
+  kv_point_local = tf.keras.layers.Reshape((num_head, num_point_qk + num_point_v, 3))(kv_point_local); # kv_point_local.shape = (N_res, num_head, num_point_qk + num_point_v, 3)
+  
   kv_point_local = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, 3)))(kv_point_local); # kv_point_local.shape = (num_head * (num_point_qk + num_point_v), 3)
   kv_point_global = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[1], x[0], transpose_b = True) + tf.expand_dims(x[2], axis = 1))([kv_point_local, rotation, translation]); # kv_point_globa.shape = (N_res, 3, num_head * (num_point_qk + num_point_v))
   kv_point_global = tf.keras.layers.Lambda(lambda x, h, p, v: tf.reshape(tf.transpose(x, (1,0,2)), (3, tf.shape(x)[0], h, p + v)), arguments = {'h': num_head, 'p': num_point_qk, 'v': num_point_v})(kv_point_global); # kv_point_global.shape = (3, N_res, num_head, num_point_qk + num_point_v)
@@ -490,15 +492,18 @@ def apply_to_point(unstack_inputs = False, extra_dims = 0):
   if unstack_inputs:
     rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
     translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
-    inputs = [rotation, translation];
+    point = tf.keras.Input([None,] * extra_dims + [3,]); # points.shape = [N_res] + [None,] * extra_dims + [3,]
+    inputs = (rotation, translation, point);
     rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,2,0)))(rotation); # rotation.shape = (3,3,N_res)
     translation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(translation); # translation.shape = (3, N_res)
+    perm = [i for i in range(2 + extra_dims)];
+    perm = perm[-1:] + perm[:-1];
+    point = tf.keras.layers.Lambda(lambda x, p: tf.transpose(x, p), arguments = {'p': perm})(point); # transformed_points.shape = [3, N_res] + [None,] * extra_dims
   else:
     rotation = tf.keras.Input((3, None), batch_size = 3); # rotation.shape = (3, 3, N_res)
     translation = tf.keras.Input((None,), batch_size = 3); # translation.shape = (3, N_res)
-    inputs = [rotation, translation];
-  point = tf.keras.Input([None,] + [None,] * extra_dims, batch_size = 3); # point.shape = [3, 1 or N_res] + [None,] * extra_dims
-  inputs.append(point);
+    point = tf.keras.Input([None,] + [None,] * extra_dims, batch_size = 3); # points.shape = [3, 1 or N_res] + [None,] * extra_dims
+    inputs = (rotation, translation, point);
   for _ in range(extra_dims):
     rotation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(rotation); # rotation.shape = [3, 3, N_res,] +  [1,] * extra_dims
     translation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(translation); # translation.shape = [3, N_res, ] + [1,] * extra_dims
@@ -522,15 +527,18 @@ def invert_point(unstack_inputs = False, extra_dims = 0):
   if unstack_inputs:
     rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
     translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
-    inputs = [rotation, translation];
+    transformed_points = tf.keras.Input([None,] * extra_dims + [3,]); # transformed_points.shape = [N_res] + [None,] * extra_dims + [3,]
+    inputs = (rotation, translation, transformed_points);
     rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,2,0)))(rotation); # rotation.shape = (3,3,N_res)
     translation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0)))(translation); # translation.shape = (3, N_res)
+    perm = [i for i in range(2 + extra_dims)];
+    perm = perm[-1:] + perm[:-1];
+    transformed_points = tf.keras.layers.Lambda(lambda x, p: tf.transpose(x, p), arguments = {'p': perm})(transformed_points); # transformed_points.shape = [3, N_res] + [None,] * extra_dims
   else:
     rotation = tf.keras.Input((3, None), batch_size = 3); # rotation.shape = (3, 3, N_res)
     translation = tf.keras.Input((None,), batch_size = 3); # translation.shape = (3, N_res)
-    inputs = [rotation, translation];
-  transformed_points = tf.keras.Input([None,] + [None,] * extra_dims, batch_size = 3); # points.shape = [3, 1 or N_res] + [None,] * extra_dims
-  inputs.append(transformed_points);
+    transformed_points = tf.keras.Input([None,] + [None,] * extra_dims, batch_size = 3); # transformed_points.shape = [3, 1 or N_res] + [None,] * extra_dims
+    inputs = (rotation, translation, transformed_points);
   for _ in range(extra_dims):
     rotation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(rotation); # rotation.shape = [3, 3, N_res,] +  [1,] * extra_dims
     translation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(translation); # translation.shape = [3, N_res,] +  [1,] * extra_dims
@@ -815,15 +823,28 @@ if __name__ == "__main__":
   points = np.random.normal(size = (3,1,5));
   rotation = np.random.normal(size = (3, 3, 4));
   translation = np.random.normal(size = (3, 4));
-  results = invert_point(extra_dims = 1)([rotation, translation, points]);
-  print('extra_dims = 1:', results.shape);
-  results = apply_to_point(extra_dims = 1)([rotation, translation, points]);
-  print('extra_dims = 1:', results.shape);
+  results = invert_point(extra_dims = 1, unstack_inputs = False)([rotation, translation, points]);
+  print('extra_dims = 1, unstack_inputs = False:', results.shape);
+  results = apply_to_point(extra_dims = 1, unstack_inputs = False)([rotation, translation, points]);
+  print('extra_dims = 1, unstack_inputs = False:', results.shape);
   points = np.random.normal(size = (3,1,5,6));
-  results = invert_point(extra_dims = 2)([rotation, translation, points]);
-  print('extra_dims = 2:', results.shape);
-  results = apply_to_point(extra_dims = 2)([rotation, translation, points]);
-  print('extra_dims = 2:', results.shape);
+  results = invert_point(extra_dims = 2, unstack_inputs = False)([rotation, translation, points]);
+  print('extra_dims = 2, unstack_inputs = False:', results.shape);
+  results = apply_to_point(extra_dims = 2, unstack_inputs = False)([rotation, translation, points]);
+  print('extra_dims = 2, unstack_inputs = False:', results.shape);
+  points = np.random.normal(size = (1,5,3));
+  rotation = np.random.normal(size = (4, 3, 3));
+  translation = np.random.normal(size = (4, 3));
+  results = invert_point(extra_dims = 1, unstack_inputs = True)([rotation, translation, points]);
+  print('extra_dims = 1, unstack_inputs = True:', results.shape);
+  results = apply_to_point(extra_dims = 1, unstack_inputs = True)([rotation, translation, points]);
+  print('extra_dims = 1, unstack_inputs = True:', results.shape);
+  points = np.random.normal(size = (1,5,6, 3));
+  results = invert_point(extra_dims = 2, unstack_inputs = True)([rotation, translation, points]);
+  print('extra_dims = 2, unstack_inputs = True:', results.shape);
+  results = apply_to_point(extra_dims = 2, unstack_inputs = True)([rotation, translation, points]);
+  print('extra_dims = 2, unstack_inputs = True:', results.shape);
+  
   inputs_1d = np.random.normal(size = (4, 384));
   inputs_2d = np.random.normal(size = (4, 4, 128));
   mask = np.random.normal(size = (4,1));
