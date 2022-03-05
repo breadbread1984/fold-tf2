@@ -795,11 +795,14 @@ if __name__ == "__main__":
   quat = np.random.normal(size = (10, 4)); #N_template, atom_type_num, 4
   rot = quat_to_rot()(quat);
   print(rot.shape);
-  points = np.random.normal(size = (3,1,4));
+  points = np.random.normal(size = (3,1,5));
   rotation = np.random.normal(size = (3, 3, 4));
   translation = np.random.normal(size = (3, 4));
   results = invert_point(extra_dims = 1)([rotation, translation, points]);
-  print(results.shape);
+  print('extra_dims = 1:', results.shape);
+  points = np.random.normal(size = (3,1,5,6));
+  results = invert_point(extra_dims = 2)([rotation, translation, points]);
+  print('extra_dims = 2:', results.shape);
   inputs_1d = np.random.normal(size = (4, 384));
   inputs_2d = np.random.normal(size = (4, 4, 128));
   mask = np.random.normal(size = (4,1));
