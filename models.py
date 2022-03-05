@@ -274,6 +274,7 @@ def InvariantPointAttention(
   result_point_global = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1,3)))(result_point_global); # result_point_global.shape = (3, N_res, num_head, num_point_v)
   result_scalar = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (tf.shape(x)[0],-1)))(result_scalar); # result_scalar.shape = (N_res, num_head * num_scalar_v)
   result_point_global = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (3, tf.shape(x)[1], -1)))(result_point_global); # result_point_global.shape = (3, N_res, num_head * num_point_v)
+  result_point_global = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,2,0)))(result_point_global); # result_point_global.shape = (N_res, num_head * num_point_v, 3)
   result_point_local = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, result_point_global]); # result_point_local.shape = (3, N_res, num_head * num_point_v)
   result_dist_local = tf.keras.layers.Lambda(lambda x, e: tf.math.sqrt(e + tf.math.square(x[0]) + tf.math.square(x[1]) + tf.math.square(x[2])), arguments = {'e': dist_epsilon})(result_point_local); # result_dist_local.shape = (N_res, num_head * num_point_v)
   result_attention_over_2d = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(tf.transpose(x[0], (1,0,2)), x[1]))([attn, inputs_2d]); # result_attention_over_2d.shape = (N_res, num_head, pair_channel)
