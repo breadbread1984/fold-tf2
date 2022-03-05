@@ -512,19 +512,25 @@ def invert_point(unstack_inputs = False, extra_dims = 0):
     rotation = tf.keras.Input((3, None), batch_size = 3); # rotation.shape = (3, 3, N_res)
     translation = tf.keras.Input((None,), batch_size = 3); # translation.shape = (3, N_res)
     inputs = [rotation, translation];
-  transformed_points = tf.keras.Input((None, None), batch_size = 3); # points.shape = (3, 1 or N_res, None)
+  transformed_points = tf.keras.Input([None,] + [None,] * extra_dims, batch_size = 3); # points.shape = [3, 1 or N_res]] + [None,] * extra_dims
   inputs.append(transformed_points);
   for _ in range(extra_dims):
     rotation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(rotation); # rotation.shape = (3, 3, N_res, 1)
     translation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(translation); # translation.shape = (3, N_res, 1)
-  rot_point = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([transformed_points, translation]); # rot_point.shape = (3, N_res, None)
+  rot_point = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([transformed_points, translation]); # rot_point.shape = [3, N_res] + [None,] * extra_dims
   # NOTE: transpose to make matmul convenient, the following two lines are not present in original code
-  rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,3,0,1)))(rotation); # rotation.shape = (N_res, 1, 3, 3)
-  rot_point = tf.keras.layers.Lambda(lambda x: tf.expand_dims(tf.transpose(x, (1,2,0)), axis = -1))(rot_point); # rot_point.shape = (N_res, None, 3, 1)
+  perm = [i for i in range(3 + extra_dims)];
+  perm = perm[2:] + perm[:2];
+  rotation = tf.keras.layers.Lambda(lambda x, p: tf.transpose(x, p), arguments = {'p': perm})(rotation); # rotation.shape = (N_res, 1, 3, 3)
+  perm = [i for i in range(2 + extra_dims)];
+  perm = perm[1:] + perm[:1];
+  rot_point = tf.keras.layers.Lambda(lambda x, p: tf.expand_dims(tf.transpose(x, p), axis = -1), arguments = {'p': perm})(rot_point); # rot_point.shape = [N_res] + [None,] * extra_dims + [3, 1]
   
-  results = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], x[1], transpose_a = True), axis = -1))([rotation, rot_point]); # results.shape = (N_res, None, 3)
+  results = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], x[1], transpose_a = True), axis = -1))([rotation, rot_point]); # results.shape = [N_res,] +  [None,] * extra_dims +  [3]
   # NOTE: this line is to make the result have the same shape as the original code
-  results = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (2,0,1)))(results); # results.shape = (3, N_res, None)
+  perm = [i for i in range(2 + extra_dims)];
+  perm = perm[-1:] + perm[:-1];
+  results = tf.keras.layers.Lambda(lambda x, p: tf.transpose(x, p), arguments = {'p': perm})(results); # results.shape = [3, N_res,] +  [None] * extra_dims
   return tf.keras.Model(inputs = inputs, outputs = results);
 
 def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39):
