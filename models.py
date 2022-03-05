@@ -282,11 +282,18 @@ def InvariantPointAttention(
   final_act = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], x[1][0], x[1][1], x[1][2], x[2], x[3]], axis = -1))([result_scalar, result_point_local, result_dist_local, result_attention_over_2d]); # final_act.shape = (N_res, num_head * num_scalar_v + 4 * num_head * num_point_v + num_head * pair_channel)
   return tf.keras.Model(inputs = (inputs_1d, inputs_2d, mask, rotation, translation), outputs = final_act);
 
-def FoldIteration(num_channel = 384):
+def FoldIteration(
+    dist_epsilon = 1e-8,
+    pair_channel = 128, num_channel = 384,
+    num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8):
   act = tf.keras.Input((num_channel,)); # act.shape = (N_res, num_channel)
+  static_feat_2d = tf.keras.Input((None, pair_channel)); # static_feat_2d.shape = (N_res, N_res, pair_channel)
+  sequence_mask = tf.keras.Input((1,)); # sequence_mask.shape = (N_res, 1)
   affine = tf.keras.Input((7,)); # affine.shape = (N_res, 7)
   normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
   rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res,3,3)
+  attn = InvariantPointAttention(dist_epsilon, pair_channel, num_channel, num_head, num_scalar_qk, num_scalar_v, num_point_qk, num_point_v)([act, static_feat_2d, sequence_mask, rotation, translation]); # attn.shape = (N_res, num_head * num_scalar_v + 4 * num_head * num_point_v + num_head * pair_channel)
+  
   # TODO
 
 def StructureModule(seq_channel = 384, pair_channel = 128, num_channel = 384):
