@@ -272,27 +272,38 @@ def InvariantPointAttention(
   result_point_global = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.expand_dims(x[1], axis = 2) * tf.expand_dims(tf.expand_dims(x[0], axis = 0), axis = -1), axis = -2))([attn, v_point]); # result_point_global.shape = (3, num_head, N_res, num_point_v)
   result_scalar = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,0,2)))(result_scalar); # result_scalar.shape = (N_res, num_head, num_scalar_v)
   result_point_global = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,2,1,3)))(result_point_global); # result_point_global.shape = (3, N_res, num_head, num_point_v)
-  result_scalar = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (tf.shape(x)[0],-1)))(result_scalar); # result_scalar.shape = (N_res, num_head * num_scalar_v)
-  result_point_global = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (3, tf.shape(x)[1], -1)))(result_point_global); # result_point_global.shape = (3, N_res, num_head * num_point_v)
+  result_scalar = tf.keras.layers.Flatten()(result_scalar); # result_scalar.shape = (N_res, num_head * num_scalar_v)
+  result_point_global = tf.keras.layers.Reshape((-1, num_head * num_point_v))(result_point_global); # result_point_global.shape = (3, N_res, num_head * num_point_v)
   result_point_global = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1,2,0)))(result_point_global); # result_point_global.shape = (N_res, num_head * num_point_v, 3)
   result_point_local = invert_point(unstack_inputs = True, extra_dims = 1)([rotation, translation, result_point_global]); # result_point_local.shape = (3, N_res, num_head * num_point_v)
   result_dist_local = tf.keras.layers.Lambda(lambda x, e: tf.math.sqrt(e + tf.math.square(x[0]) + tf.math.square(x[1]) + tf.math.square(x[2])), arguments = {'e': dist_epsilon})(result_point_local); # result_dist_local.shape = (N_res, num_head * num_point_v)
   result_attention_over_2d = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(tf.transpose(x[0], (1,0,2)), x[1]))([attn, inputs_2d]); # result_attention_over_2d.shape = (N_res, num_head, pair_channel)
   result_attention_over_2d = tf.keras.layers.Flatten()(result_attention_over_2d); # result_attention_over_2d.shape = (N_res, num_head * pair_channel)
   final_act = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], x[1][0], x[1][1], x[1][2], x[2], x[3]], axis = -1))([result_scalar, result_point_local, result_dist_local, result_attention_over_2d]); # final_act.shape = (N_res, num_head * num_scalar_v + 4 * num_head * num_point_v + num_head * pair_channel)
+  final_act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(final_act); # final_act.shape = (N_res, num_channel)
   return tf.keras.Model(inputs = (inputs_1d, inputs_2d, mask, rotation, translation), outputs = final_act);
 
 def FoldIteration(
     dist_epsilon = 1e-8,
-    pair_channel = 128, num_channel = 384,
-    num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8):
+    pair_channel = 128, num_channel = 384, drop_rate = 0.1, num_layer_in_transition = 3,
+    num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8,):
   act = tf.keras.Input((num_channel,)); # act.shape = (N_res, num_channel)
   static_feat_2d = tf.keras.Input((None, pair_channel)); # static_feat_2d.shape = (N_res, N_res, pair_channel)
   sequence_mask = tf.keras.Input((1,)); # sequence_mask.shape = (N_res, 1)
   affine = tf.keras.Input((7,)); # affine.shape = (N_res, 7)
+  inputs = (act, static_feat_2d, sequence_mask, affine);
   normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
   rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res,3,3)
   attn = InvariantPointAttention(dist_epsilon, pair_channel, num_channel, num_head, num_scalar_qk, num_scalar_v, num_point_qk, num_point_v)([act, static_feat_2d, sequence_mask, rotation, translation]); # attn.shape = (N_res, num_head * num_scalar_v + 4 * num_head * num_point_v + num_head * pair_channel)
+  act = tf.keras.layers.Add()([act, attn]); # act.shape = (N_res, num_channel)
+  act = tf.keras.layers.Dropout(rate = drop_rate)(act); # act.shape = (N_res, num_channel)
+  act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_res, num_channel)
+  input_act = act;
+  for i in range(num_layer_in_transition):
+    act = tf.keras.layers.Dense(num_channel, activation = tf.keras.activations.relu if i < num_layer_in_transition - 1 else None, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
+  act = tf.keras.layers.Add()([act, input_act]); # act.shape = (N_res, num_channel)
+  act = tf.keras.layers.Dropout(rate = drop_rate)(act); # act.shape = (N_res, num_channel)
+  act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_res, num_channel)
   
   # TODO
 
