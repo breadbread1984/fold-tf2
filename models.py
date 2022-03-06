@@ -284,6 +284,7 @@ def InvariantPointAttention(
   return tf.keras.Model(inputs = (inputs_1d, inputs_2d, mask, rotation, translation), outputs = final_act);
 
 def FoldIteration(
+    update_affine = True,
     dist_epsilon = 1e-8,
     pair_channel = 128, num_channel = 384, drop_rate = 0.1, num_layer_in_transition = 3,
     num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8,):
@@ -304,7 +305,9 @@ def FoldIteration(
   act = tf.keras.layers.Add()([act, input_act]); # act.shape = (N_res, num_channel)
   act = tf.keras.layers.Dropout(rate = drop_rate)(act); # act.shape = (N_res, num_channel)
   act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_res, num_channel)
-  
+  if update_affine:
+    affine_update = tf.keras.layers.Dense(6, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(act); # affine_update.shape = (N_res, 6)
+    affine = 
   # TODO
 
 def StructureModule(seq_channel = 384, pair_channel = 128, num_channel = 384):
@@ -572,6 +575,25 @@ def invert_point(unstack_inputs = False, extra_dims = 0):
   perm = perm[-1:] + perm[:-1];
   results = tf.keras.layers.Lambda(lambda x, p: tf.transpose(x, p), arguments = {'p': perm})(results); # results.shape = [3, N_res,] +  [None] * extra_dims
   return tf.keras.Model(inputs = inputs, outputs = results);
+
+def pre_compose():
+  update = tf.keras.Input((6,)); # update.shape = (N_res, 6)
+  normalized_quat = tf.keras.Input((4,)); # normalized_quat.shape = (N_res, 4)
+  translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
+  vector_quaternion_update, trans_update = tf.keras.layers.Lambda(lambda x: tf.split(x, [3,3], axis = -1))(update); # vector_quaternion_update.shape = (N_res, 3), trans_update.shape = (N_res, 3)
+  QUAT_MULTIPLY = tf.keras.layers.Lambda(lambda x: tf.stack([
+    [[1,0,0,0],[0,-1,0,0],[0,0,-1,0],[0,0,0,-1],],
+    [[0,1,0,0],[1,0,0,0],[0,0,0,1],[0,0,-1,0],],
+    [[0,0,1,0],[0,0,0,-1],[1,0,0,0],[0,1,0,0],],
+    [[0,0,0,1],[0,0,1,0],[0,-1,0,0],[1,0,0,0],],], axis = -1))(update); # QUAT_MULTIPLY.shape = (4,4,4)
+  QUAT_MULTIPLY_BY_VEC = tf.keras.layers.Lambda(lambda x: x[:,1:,:])(QUAT_MULTIPLY); # QUAT_MULTIPLY_BY_VEC.shape = (4,3,4)
+  results = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(X[0] * X[1][...,:,None,None] * x[2][...,None,:,None], axis = (-3, -2)))([QUAT_MULTIPLY_BY_VEC, normalized_quat, vector_quaternion_update]); # results.shape = (N_res, 4)
+  new_quaternion = tf.keras.layers.Add()([normalized_quat, results]); # new_quaternion.shape = (N_res, 4)
+  rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res, 3, 3)
+  trans_update = apply_to_point(unstack_inputs = True)([rotation, translation, trans_update]); # trans_update.shape = (3, N_res)
+  new_translation = tf.keras.layers.Lambda(lambda x: x[0] + tf.transpose(x[1], (1,0)))([translation, trans_update]); # new_translation.shape = (N_res, 3)
+  affine = tf.keras.layers.Concatenate(axis = -1)([new_quaternion, new_translation]); # affine.shape = (N_res, 7)
+  return tf.keras.Model(inputs = (update, normalized_quat, translation), outputs = affine);
 
 def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
