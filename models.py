@@ -307,7 +307,7 @@ def FoldIteration(
   act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_res, num_channel)
   if update_affine:
     affine_update = tf.keras.layers.Dense(6, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(act); # affine_update.shape = (N_res, 6)
-    affine = 
+    #affine = 
   # TODO
 
 def StructureModule(seq_channel = 384, pair_channel = 128, num_channel = 384):
@@ -584,12 +584,12 @@ def pre_compose():
   translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
   vector_quaternion_update, trans_update = tf.keras.layers.Lambda(lambda x: tf.split(x, [3,3], axis = -1))(update); # vector_quaternion_update.shape = (N_res, 3), trans_update.shape = (N_res, 3)
   QUAT_MULTIPLY = tf.keras.layers.Lambda(lambda x: tf.stack([
-    [[1,0,0,0],[0,-1,0,0],[0,0,-1,0],[0,0,0,-1],],
-    [[0,1,0,0],[1,0,0,0],[0,0,0,1],[0,0,-1,0],],
-    [[0,0,1,0],[0,0,0,-1],[1,0,0,0],[0,1,0,0],],
-    [[0,0,0,1],[0,0,1,0],[0,-1,0,0],[1,0,0,0],],], axis = -1))(update); # QUAT_MULTIPLY.shape = (4,4,4)
+    [[1.,0.,0.,0.],[0.,-1.,0.,0.],[0.,0.,-1.,0.],[0.,0.,0.,-1.],],
+    [[0.,1.,0.,0.],[1.,0.,0.,0.],[0.,0.,0.,1.],[0.,0.,-1.,0.],],
+    [[0.,0.,1.,0.],[0.,0.,0.,-1.],[1.,0.,0.,0.],[0.,1.,0.,0.],],
+    [[0.,0.,0.,1.],[0.,0.,1.,0.],[0.,-1.,0.,0.],[1.,0.,0.,0.],],], axis = -1))(update); # QUAT_MULTIPLY.shape = (4,4,4)
   QUAT_MULTIPLY_BY_VEC = tf.keras.layers.Lambda(lambda x: x[:,1:,:])(QUAT_MULTIPLY); # QUAT_MULTIPLY_BY_VEC.shape = (4,3,4)
-  results = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(X[0] * X[1][...,:,None,None] * x[2][...,None,:,None], axis = (-3, -2)))([QUAT_MULTIPLY_BY_VEC, normalized_quat, vector_quaternion_update]); # results.shape = (N_res, 4)
+  results = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(x[0] * x[1][...,:,None,None] * x[2][...,None,:,None], axis = (-3, -2)))([QUAT_MULTIPLY_BY_VEC, normalized_quat, vector_quaternion_update]); # results.shape = (N_res, 4)
   new_quaternion = tf.keras.layers.Add()([normalized_quat, results]); # new_quaternion.shape = (N_res, 4)
   rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res, 3, 3)
   trans_update = apply_to_point(unstack_inputs = True)([rotation, translation, trans_update]); # trans_update.shape = (3, N_res)
@@ -891,3 +891,8 @@ if __name__ == "__main__":
   translation = np.random.normal(size = (4,3));
   final_act = InvariantPointAttention()([inputs_1d, inputs_2d, mask, rotation, translation]);
   print(final_act.shape);
+  update = np.random.normal(size = (10,6));
+  normalized_quat = np.random.normal(size = (10,4));
+  translation = np.random.normal(size = (10, 3));
+  affine = pre_compose()([update, normalized_quat, translation]);
+  print(affine.shape);
