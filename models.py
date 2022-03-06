@@ -319,9 +319,11 @@ def StructureModule(seq_channel = 384, pair_channel = 128, num_channel = 384):
   initial_act = act;
   act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
   quaternion = tf.keras.layers.Lambda(lambda x: tf.tile(tf.expand_dims([1.,0.,0.,0.], axis = 0), (tf.shape(x)[0], 1)))(sequence_mask); # quaternion.shape = (N_res, 4)
+  #generate_new_affine
   translation = tf.keras.layers.Lambda(lambda x: tf.zeros((tf.shape(x)[0], 3)))(sequence_mask); # translation.shape = (N_res, 3)
   normalized_quat = tf.keras.layers.Lambda(lambda x: x / tf.norm(x, axis = -1, keepdims = True))(quaternion); # quaternion.shape = (N_res, 4)
-  affine = tf.keras.layers.Concatenate(axis = -1)([normalized_quat, translation]); # affine.shape = (N_res, 7);
+  affine = tf.keras.layers.Concatenate(axis = -1)([normalized_quat, translation]); # affine.shape = (N_res, 7)
+  
   act_2d = tf.keras.layers.LayerNormalization()(pair); # act_2d.shape = (N_res, N_res, pair_channel)
   # TODO
 
