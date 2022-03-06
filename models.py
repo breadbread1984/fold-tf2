@@ -297,6 +297,16 @@ def MultiRigidSidechain(num_channel = 384, num_residual_block = 2):
   act = tf.keras.layers.Add()([act, initial_act]); # act.shape = (N_res, num_channel)
   for i in range(num_residual_block):
     old_act = act;
+    act = tf.keras.layers.ReLU()(act);
+    act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
+    act = tf.keras.layers.ReLU()(act);
+    act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
+    act = tf.keras.layers.Add()([act, old_act]);
+  act = tf.keras.layers.ReLU()(act);
+  unnormalized_angles = tf.keras.layers.Dense(14, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, 14)
+  unnormalized_angles = tf.keras.layers.Reshape((7,2))(unnormalized_angles); # unnormalized_angles.shape = (N_res, 7, 2)
+  angles = tf.keras.layers.Lambda(lambda x: x / tf.math.sqrt(tf.math.maximum(tf.math.reduce_sum(x**2,axis = -1, keepdims = True), 1e-12)))(unnormalized_angles); # angles.shape = (N_res, 7, 2)
+  # TODO
 
 def FoldIteration(
     update_affine = True,
