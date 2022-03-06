@@ -283,6 +283,21 @@ def InvariantPointAttention(
   final_act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(final_act); # final_act.shape = (N_res, num_channel)
   return tf.keras.Model(inputs = (inputs_1d, inputs_2d, mask, rotation, translation), outputs = final_act);
 
+def MultiRigidSidechain(num_channel = 384, num_residual_block = 2):
+  rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
+  translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
+  act = tf.keras.Input((num_channel,)); # act.shape = (N_res, num_channel)
+  initial_act = tf.keras.Input((num_channel,)); # initial_act.shape = (N_res, num_channel)
+  aatype = tf.keras.Input(()); # aatype.shape = (N_res,)
+  inputs = (rotation, translation, act, initial_act, aatype);
+  act = tf.keras.layers.ReLU()(act);
+  act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
+  initial_act = tf.keras.layers.ReLU()(initial_act);
+  initial_act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(initial_act); # initial_act.shape = (N_res, num_channel)
+  act = tf.keras.layers.Add()([act, initial_act]); # act.shape = (N_res, num_channel)
+  for i in range(num_residual_block):
+    old_act = act;
+
 def FoldIteration(
     update_affine = True,
     dist_epsilon = 1e-8,
@@ -292,8 +307,9 @@ def FoldIteration(
   static_feat_2d = tf.keras.Input((None, pair_channel)); # static_feat_2d.shape = (N_res, N_res, pair_channel)
   sequence_mask = tf.keras.Input((1,)); # sequence_mask.shape = (N_res, 1)
   affine = tf.keras.Input((7,)); # affine.shape = (N_res, 7)
-  inputs = (act, static_feat_2d, sequence_mask, affine);
-  normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
+  initial_act = tf.keras.Input((num_channel,)); # initial_act.shape = (N_res, num_channel)
+  inputs = (act, static_feat_2d, sequence_mask, affine, initial_act);
+  normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,3], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
   rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res,3,3)
   attn = InvariantPointAttention(dist_epsilon, pair_channel, num_channel, num_head, num_scalar_qk, num_scalar_v, num_point_qk, num_point_v)([act, static_feat_2d, sequence_mask, rotation, translation]); # attn.shape = (N_res, num_head * num_scalar_v + 4 * num_head * num_point_v + num_head * pair_channel)
   act = tf.keras.layers.Add()([act, attn]); # act.shape = (N_res, num_channel)
@@ -307,7 +323,10 @@ def FoldIteration(
   act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_res, num_channel)
   if update_affine:
     affine_update = tf.keras.layers.Dense(6, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(act); # affine_update.shape = (N_res, 6)
-    #affine = 
+    affine = pre_compose()([affine_update, normalized_quat, translation]); # affine.shape = (N_res, 7)
+    normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,3], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
+    rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res, 3, 3)
+    
   # TODO
 
 def StructureModule(seq_channel = 384, pair_channel = 128, num_channel = 384):
