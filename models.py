@@ -294,6 +294,29 @@ def torsion_angles_to_frames():
   default_frame_translation = tf.keras.layers.Lambda(lambda x: x[...,0:3,3])(m); # default_frame_translation.shape = (N_res, 8, 3)
   sin_angles = tf.keras.layers.Lambda(lambda x: x[...,0])(torsion_angles_sin_cos); # sin_angles.shape = (N_res, 7)
   cos_angles = tf.keras.layers.Lambda(lambda x: x[...,1])(torsion_angles_sin_cos); # cos_angles.shape = (N_res, 7)
+  sin_angles = tf.keras.layers.Lambda(lambda x: tf.concat([tf.zeros((tf.shape(x)[0],1)), x], axis = -1))(sin_angles); # sin_angles.shape = (N_res, 8)
+  cos_angles = tf.keras.layers.Lambda(lambda x: tf.concat([tf.ones((tf.shape(x)[0],1)), x], axis = -1))(cos_angles); # cos_angles.shape = (N_res, 8)
+  all_rots = tf.keras.layers.Lambda(lambda x: tf.stack([
+                                                tf.stack([tf.ones_like(x[0]), tf.zeros_like(x[0]), tf.zeros_like(x[0])], axis = -1),
+                                                tf.stack([tf.zeros_like(x[0]), x[1], -x[0]], axis = -1),
+                                                tf.stack([tf.zeros_like(x[0]), x[0], x[1]], axis = -1),
+                                              ], axis = -2))([sin_angles, cos_angles]); # all_rots.shape = (N_res,8,3,3)
+  all_frames_rotation = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0],x[1]))([default_frame_rotation, all_rots]); # all_frames.shape = (N_res, 8, 3, 3)
+  all_frames_translation = tf.keras.layers.Lambda(lambda x: tf.identity(x))(default_frame_translation); # all_frame_translation.shape = (N_res, 8, 3)
+  chi2_frame_to_frame_rotation = tf.keras.layers.Lambda(lambda x: x[:,5])(all_frames_rotation); # chi2_frame_to_frame_rotation.shape = (N_res, 3, 3)
+  chi2_frame_to_frame_translation = tf.keras.layers.Lambda(lambda x: x[:,5])(all_frames_translation); # chi2_frame_to_frame_translation.shape = (N_res, 3)
+  chi3_frame_to_frame_rotation = tf.keras.layers.Lambda(lambda x: x[:,6])(all_frames_rotation); # chi3_frame_to_frame_rotation.shape = (N_res, 3, 3)
+  chi3_frame_to_frame_translation = tf.keras.layers.Lambda(lambda x: x[:,6])(all_frames_translation); # chi3_frame_to_frame_translation.shape = (N_res, 3)
+  chi4_frame_to_frame_rotation = tf.keras.layers.Lambda(lambda x: x[:,7])(all_frames_rotation); # chi4_frame_to_frame_rotation.shape = (N_res, 3, 3)
+  chi4_frame_to_frame_translation = tf.keras.layers.Lambda(lambda x: x[:,7])(all_frames_translation); # chi4_frame_to_frame_translation.shape = (N_res, 3)
+  chi1_frame_to_backb_rotation = tf.keras.layers.Lambda(lambda x: x[:,4])(all_frames_rotation); # chi1_frame_to_backb_rotation.shape = (N_res, 3, 3)
+  chi1_frame_to_backb_translation = tf.keras.layers.Lambda(lambda x: x[:,4])(all_frames_translation); # chi1_frame_to_backb_translation.shape = (N_res, 3)
+  chi2_frame_to_backb_rotation = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([chi1_frame_to_backb_rotation, chi2_frame_to_frame_rotation]); # chi2_frame_to_backb_rotation.shape = (N_res, 3, 3)
+  chi2_frame_to_backb_translation = tf.keras.layers.Lambda(lambda x: x[1] + tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1))([chi1_frame_to_backb_rotation, chi1_frame_to_backb_translation, chi2_frame_to_frame_translation]); # chi2_frame_to_backb_translation.shape = (N_res, 3)
+  chi3_frame_to_backb_rotation = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([chi2_frame_to_backb_rotation, chi3_frame_to_frame_rotation]); # chi3_frame_to_backb_rotation.shape = (N_res, 3, 3)
+  chi3_frame_to_backb_translation = tf.keras.layers.Lambda(lambda x: x[1] + tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1))([chi2_frame_to_backb_rotation, chi2_frame_to_backb_translation, chi3_frame_to_frame_translation]); # chi3_frame_to_backb_translation.shape = (N_res, 3)
+  chi4_frame_to_backb_rotation = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([chi3_frame_to_backb_rotation, chi4_frame_to_frame_rotation]); # chi4_frame_to_backb_rotation.shape = (N_res, 3, 3)
+  chi4_frame_to_backb_translation = tf.keras.layers.Lambda(lambda x: x[1] + tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1))([chi3_frame_to_backb_rotation, chi3_frame_to_backb_translation, chi4_frame_to_frame_translation]); # chi4_frame_to_backb_translation.shape = (N_res, 3)
   
   # TODO
 
