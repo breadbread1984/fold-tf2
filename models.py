@@ -423,7 +423,7 @@ def StructureModule(seq_channel = 384, num_layer = 8,
   pair = tf.keras.Input((None, pair_channel)); # pair.shape = (N_res, N_res, pair_channel)
   aatype = tf.keras.Input((), dtype = tf.int32); # aatype.shape = (N_res)
   atom14_atom_exists = tf.keras.Input((14,)); # atom14_atom_exists.shape = (N_res, 14)
-  residx_atom37_to_atom14 = tf.keras.Input((37,)); # residx_atom37_to_atom14.shape = (N_res, 37)
+  residx_atom37_to_atom14 = tf.keras.Input((37,), dtype = tf.int32); # residx_atom37_to_atom14.shape = (N_res, 37)
   atom37_atom_exists = tf.keras.Input((37,)); # atom37_atom_exists.shape = (N_res, 37)
   inputs = (seq_mask, single, pair, aatype, atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists);
   # generate_affines
