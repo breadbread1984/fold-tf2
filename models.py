@@ -285,9 +285,10 @@ def InvariantPointAttention(
 
 def torsion_angles_to_frames():
   aatype = tf.keras.Input((), dtype = tf.int32); # aatype.shape = (N_res,)
-  rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
-  translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
+  backb_to_global_rotation = tf.keras.Input((3,3)); # backb_to_global_rotation.shape = (N_res, 3, 3)
+  backb_to_global_translation = tf.keras.Input((3,)); # backb_to_global_translation.shape = (N_res, 3)
   torsion_angles_sin_cos = tf.keras.Input((7, 2)); # torsion_angles_sin_cos.shape = (N_res, 7, 2)
+  inputs = (aatype, backb_to_global_rotation, backb_to_global_translation, torsion_angles_sin_cos);
   # restype_rigid_group_default_frame.shape = (21,8,4,4)
   m = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_rigid_group_default_frame})(aatype); # m.shape = (N_res, 8, 4, 4)
   default_frame_rotation = tf.keras.layers.Lambda(lambda x: x[...,0:3,0:3])(m); # default_frame_rotation.shape = (N_res, 8, 3, 3)
@@ -319,8 +320,11 @@ def torsion_angles_to_frames():
   chi4_frame_to_backb_translation = tf.keras.layers.Lambda(lambda x: x[1] + tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1))([chi3_frame_to_backb_rotation, chi3_frame_to_backb_translation, chi4_frame_to_frame_translation]); # chi4_frame_to_backb_translation.shape = (N_res, 3)
   all_frames_to_backb_rotation = tf.keras.layers.Lambda(lambda x: tf.concat([x[0][:,0:5], tf.expand_dims(x[1], axis = 1), tf.expand_dims(x[2], axis = 1), tf.expand_dims(x[3], axis = 1)], axis = 1))([all_frames_rotation, chi2_frame_to_backb_rotation, chi3_frame_to_backb_rotation, chi4_frame_to_backb_rotation]); # all_frames_rotation.shape = (N_res, 8, 3, 3)
   all_frames_to_backb_translation = tf.keras.layers.Lambda(lambda x: tf.concat([x[0][:,0:5], tf.expand_dims(x[1], axis = 1), tf.expand_dims(x[2], axis = 1), tf.expand_dims(x[3], axis = 1)], axis = 1))([all_frames_translation, chi2_frame_to_backb_translation, chi3_frame_to_backb_translation, chi4_frame_to_backb_translation]); # all_frames_translation.shape = (N_res, 8, 3)
-  
-  # TODO
+  backb_to_global_rotation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = 1))(backb_to_global_rotation); # backb_to_global_rotation.shape = (N_res, 1, 3, 3)
+  backb_to_global_translation = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = 1))(backb_to_global_translation); # backb_to_global_translation.shape = (N_res, 1, 3)
+  all_frames_to_global_rotation = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([backb_to_global_rotation, all_frames_to_backb_rotation]); # all_frames_to_global_rotation.shape = (N_res, 8, 3, 3)
+  all_frames_to_global_translation = tf.keras.layers.Lambda(lambda x: x[1] + tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1))([backb_to_global_rotation, backb_to_global_translation, all_frames_to_backb_translation]); # # all_frames_to_global_translation.shape = (N_res,8,3)
+  return tf.keras.Model(inputs = inputs, outputs = (all_frames_to_global_rotation, all_frames_to_global_translation));
 
 def MultiRigidSidechain(num_channel = 384, num_residual_block = 2):
   rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
