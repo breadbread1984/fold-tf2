@@ -425,7 +425,7 @@ def StructureModule(seq_channel = 384, num_layer = 8,
   atom14_atom_exists = tf.keras.Input((14,)); # atom14_atom_exists.shape = (N_res, 14)
   residx_atom37_to_atom14 = tf.keras.Input((37,)); # residx_atom37_to_atom14.shape = (N_res, 37)
   atom37_atom_exists = tf.keras.Input((37,)); # atom37_atom_exists.shape = (N_res, 37)
-  inputs = (seq_mask, single, pair, aatype, atom14_atom_exists, atom37_atom_exists);
+  inputs = (seq_mask, single, pair, aatype, atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists);
   # generate_affines
   sequence_mask = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(seq_mask); # sequence_mask.shape = (N_res, 1)
   act = tf.keras.layers.LayerNormalization()(single); # act.shape = (N_res, seq_channel)
@@ -1075,5 +1075,5 @@ if __name__ == "__main__":
   atom14_atom_exists = np.random.normal(size = (15,14));
   residx_atom37_to_atom14 = np.random.randint(0, 14, size = (15,37));
   atom37_atom_exists = np.random.normal(size = (15,37));
-  final_atom_positions, final_atom_mask, structure_module = StructureModule()([seq_mask, single,pair,aatype, atom14_atom_exists,atom37_atom_exists]);
+  final_atom_positions, final_atom_mask, structure_module = StructureModule()([seq_mask, single,pair,aatype, atom14_atom_exists,residx_atom37_to_atom14,atom37_atom_exists]);
   print(final_atom_positions.shape, final_atom_mask.shape, structure_module.shape);
