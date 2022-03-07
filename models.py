@@ -369,6 +369,7 @@ def MultiRigidSidechain(num_channel = 384, sidechain_num_channel = 128, num_resi
   angles = tf.keras.layers.Lambda(lambda x: x / tf.math.sqrt(tf.math.maximum(tf.math.reduce_sum(x**2,axis = -1, keepdims = True), 1e-12)))(unnormalized_angles); # angles.shape = (N_res, 7, 2)
   all_frames_to_global_rotation, all_frames_to_global_translation = torsion_angles_to_frames()([aatype, rotation, translation, angles]); # all_frames_to_global_rotation.shape = (N_res, 8, 3, 3), all_frames_to_global_translation.shape = (N_res, 8, 3)
   pred_positions = frames_and_literature_positions_to_atom14_pos()([aatype, all_frames_to_global_rotation, all_frames_to_global_translation]); # pred_positions.shape = (N_res, 14, 3)
+  # NOTE: atom_pos: pred_positions, frames: all_frames_to_global_rotation, all_frames_to_global_translation
   return tf.keras.Model(inputs = inputs, outputs = (pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation));
 
 def FoldIteration(
@@ -406,6 +407,9 @@ def FoldIteration(
     rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res, 3, 3)
   scaled_translation = tf.keras.layers.Lambda(lambda x, s: s * x, arguments = {'s': position_scale})(translation); # scaled_translatoin.shape = (N_res, 3)
   pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation = MultiRigidSidechain(num_channel, sidechain_num_channel, sidechain_num_residual_block)([rotation, scaled_translation, act, initial_act, aatype]);
+  # pred_positions.shape = (N_res, 14, 3)
+  # all_frames_to_global_rotation.shape = (N_res, 8, 3, 3)
+  # all_frames_to_global_translation.shape = (N_res, 8, 3)
   return tf.keras.Model(inputs = inputs, outputs = (affine, pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation, act));
 
 def StructureModule(seq_channel = 384, num_layer = 8,
@@ -419,6 +423,7 @@ def StructureModule(seq_channel = 384, num_layer = 8,
   pair = tf.keras.Input((None, pair_channel)); # pair.shape = (N_res, N_res, pair_channel)
   aatype = tf.keras.Input((), dtype = tf.int32); # aatype.shape = (N_res)
   inputs = (seq_mask, single, pair, aatype);
+  # generate_affines
   sequence_mask = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(seq_mask); # sequence_mask.shape = (N_res, 1)
   act = tf.keras.layers.LayerNormalization()(single); # act.shape = (N_res, seq_channel)
   initial_act = act;
@@ -430,11 +435,23 @@ def StructureModule(seq_channel = 384, num_layer = 8,
   affine = tf.keras.layers.Concatenate(axis = -1)([normalized_quat, translation]); # affine.shape = (N_res, 7)
   
   act_2d = tf.keras.layers.LayerNormalization()(pair); # act_2d.shape = (N_res, N_res, pair_channel)
+  affine_results = list();
+  positions_results = list();
+  rotation_results = list();
+  translation_results = list();
   for i in range(num_layer):
-    # activation = (act, affine(stop gradient to rotation)), outputs = (affine, pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation)
+    # NOTE: activation = (act, affine(stop gradient to rotation)), outputs = (affine, pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation)
     affine, pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation, act = FoldIteration(update_affine, dist_epsilon, pair_channel, num_channel, drop_rate, num_layer_in_transition, num_head,\
       num_scalar_qk, num_scalar_v, num_point_qk, num_point_v, sidechain_num_channel, sidechain_num_residual_block, position_scale)([act, act_2d, sequence_mask, affine, initial_act, aatype]);
-    
+    affine_results.append(affine);
+    position_results.append(pred_positions);
+    rotation_results.append(all_frames_to_global_rotation);
+    translation_results.append(all_frames_to_global_translation);
+  affine = tf.keras.layers.Lambda(lambda x: tf.stack(x, axis = 0))(affine_results); # affine.shape = (num_layer, N_res, 7)
+  position = tf.keras.layers.Lambda(lambda x: tf.stack(x, axis = 0))(position_results); # position.shape = (num_layer, N_res, 14, 3)
+  rotation = tf.keras.layers.Lambda(lambda x: tf.stack(x, axis = 0))(rotation_results); # rotation.shape = (num_layer, N_res, 3, 3)
+  translation = tf.keras.layers.Lambda(lambda x: tf.stack(x, axis = 0))(translation_results); # translation.shape = (num_layer, N_res, 3)
+  
   # TODO
 
 def PredictedLDDTHead(c_s, num_channels = 128, num_bins = 50, **kwargs):
