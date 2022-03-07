@@ -2,7 +2,7 @@
 
 import numpy as np;
 import tensorflow as tf;
-from residue_constants import restype_order, atom_order, atom_type_num;
+from residue_constants import restype_order, atom_order, atom_type_num, restype_rigid_group_default_frame;
 
 def TemplatePairStack(c_t, num_head = 4, num_intermediate_channel = 64, num_block = 2, rate = 0.25, **kwargs):
   pair_act = tf.keras.Input((None, c_t)); # pair_act.shape = (N_res, N_res, c_t)
@@ -283,6 +283,20 @@ def InvariantPointAttention(
   final_act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(final_act); # final_act.shape = (N_res, num_channel)
   return tf.keras.Model(inputs = (inputs_1d, inputs_2d, mask, rotation, translation), outputs = final_act);
 
+def torsion_angles_to_frames():
+  aatype = tf.keras.Input((), dtype = tf.int32); # aatype.shape = (N_res,)
+  rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
+  translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
+  torsion_angles_sin_cos = tf.keras.Input((7, 2)); # torsion_angles_sin_cos.shape = (N_res, 7, 2)
+  # restype_rigid_group_default_frame.shape = (21,8,4,4)
+  m = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_rigid_group_default_frame})(aatype); # m.shape = (N_res, 8, 4, 4)
+  default_frame_rotation = tf.keras.layers.Lambda(lambda x: x[...,0:3,0:3])(m); # default_frame_rotation.shape = (N_res, 8, 3, 3)
+  default_frame_translation = tf.keras.layers.Lambda(lambda x: x[...,0:3,3])(m); # default_frame_translation.shape = (N_res, 8, 3)
+  sin_angles = tf.keras.layers.Lambda(lambda x: x[...,0])(torsion_angles_sin_cos); # sin_angles.shape = (N_res, 7)
+  cos_angles = tf.keras.layers.Lambda(lambda x: x[...,1])(torsion_angles_sin_cos); # cos_angles.shape = (N_res, 7)
+  
+  # TODO
+
 def MultiRigidSidechain(num_channel = 384, num_residual_block = 2):
   rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
   translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
@@ -306,6 +320,7 @@ def MultiRigidSidechain(num_channel = 384, num_residual_block = 2):
   unnormalized_angles = tf.keras.layers.Dense(14, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, 14)
   unnormalized_angles = tf.keras.layers.Reshape((7,2))(unnormalized_angles); # unnormalized_angles.shape = (N_res, 7, 2)
   angles = tf.keras.layers.Lambda(lambda x: x / tf.math.sqrt(tf.math.maximum(tf.math.reduce_sum(x**2,axis = -1, keepdims = True), 1e-12)))(unnormalized_angles); # angles.shape = (N_res, 7, 2)
+  
   # TODO
 
 def FoldIteration(
