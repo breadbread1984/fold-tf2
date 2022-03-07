@@ -368,8 +368,8 @@ def MultiRigidSidechain(num_channel = 384, num_residual_block = 2):
   unnormalized_angles = tf.keras.layers.Reshape((7,2))(unnormalized_angles); # unnormalized_angles.shape = (N_res, 7, 2)
   angles = tf.keras.layers.Lambda(lambda x: x / tf.math.sqrt(tf.math.maximum(tf.math.reduce_sum(x**2,axis = -1, keepdims = True), 1e-12)))(unnormalized_angles); # angles.shape = (N_res, 7, 2)
   all_frames_to_global_rotation, all_frames_to_global_translation = torsion_angles_to_frames()([aatype, rotation, translation, angles]); # all_frames_to_global_rotation.shape = (N_res, 8, 3, 3), all_frames_to_global_translation.shape = (N_res, 8, 3)
-  
-  # TODO
+  pred_positions = frames_and_literature_positions_to_atom14_pos()([aatype, all_frames_to_global_rotation, all_frames_to_global_translation]); # pred_positions.shape = (N_res, 14, 3)
+  return tf.keras.Model(inputs = inputs, outputs = (pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation));
 
 def FoldIteration(
     update_affine = True,
