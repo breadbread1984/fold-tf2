@@ -383,7 +383,7 @@ def FoldIteration(
   affine = tf.keras.Input((7,)); # affine.shape = (N_res, 7)
   initial_act = tf.keras.Input((num_channel,)); # initial_act.shape = (N_res, num_channel)
   aatype = tf.keras.Input(()); # aatype.shape = (N_res)
-  inputs = (act, static_feat_2d, sequence_mask, affine, initial_act);
+  inputs = (act, static_feat_2d, sequence_mask, affine, initial_act, aatype);
   normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,3], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
   rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res,3,3)
   attn = InvariantPointAttention(dist_epsilon, pair_channel, num_channel, num_head, num_scalar_qk, num_scalar_v, num_point_qk, num_point_v)([act, static_feat_2d, sequence_mask, rotation, translation]); # attn.shape = (N_res, num_head * num_scalar_v + 4 * num_head * num_point_v + num_head * pair_channel)
