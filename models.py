@@ -403,7 +403,7 @@ def FoldIteration(
     rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res, 3, 3)
   scaled_translation = tf.keras.layers.Lambda(lambda x, s: s * x, arguments = {'s': position_scale})(translation); # scaled_translatoin.shape = (N_res, 3)
   pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation = MultiRigidSidechain(num_channel, sidechain_num_channel, sidechain_num_residual_block)([rotation, scaled_translation, act, initial_act, aatype]);
-  # HERE
+  return tf.keras.Model(inputs = inputs, outputs = (affine, pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation, act));
 
 def StructureModule(seq_channel = 384, pair_channel = 128, num_channel = 384):
   seq_mask = tf.keras.Input(()); # seq_mask.shape = (N_res)
