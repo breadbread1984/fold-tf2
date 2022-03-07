@@ -1009,3 +1009,11 @@ if __name__ == "__main__":
   aatype = np.random.randint(0, 21, size = (10,));
   pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation = MultiRigidSidechain()([rotation, translation, act, initial_act, aatype]);
   print(pred_positions.shape, all_frames_to_global_rotation.shape, all_frames_to_global_translation.shape);
+  act = np.random.normal(size = (8, 384));
+  static_feat_2d = np.random.normal(size = (8,8,128));
+  sequence_mask = np.random.normal(size = (8,1));
+  affine = np.random.normal(size = (8,7));
+  initial_act = np.random.normal(size = (8,384));
+  aatype = np.random.randint(0,21,size= (8));
+  affine, positions, rotation, translation, act = FoldIteration([act, static_feat_2d, sequence_mask, affine, initial_act, aatype]);
+  
