@@ -386,6 +386,9 @@ def FoldIteration(
   inputs = (act, static_feat_2d, sequence_mask, affine, initial_act, aatype);
   normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,3], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
   rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res,3,3)
+  # NOTE: https://github.com/deepmind/alphafold/blob/9c4ac8a92125942f73813649d9f6885532c1ee97/alphafold/model/folding.py#L381
+  # no gradient should be back propagation through rotation
+  rotation = tf.keras.layers.Lambda(lambda x: tf.stop_gradient(x))(rotation);
   attn = InvariantPointAttention(dist_epsilon, pair_channel, num_channel, num_head, num_scalar_qk, num_scalar_v, num_point_qk, num_point_v)([act, static_feat_2d, sequence_mask, rotation, translation]); # attn.shape = (N_res, num_head * num_scalar_v + 4 * num_head * num_point_v + num_head * pair_channel)
   act = tf.keras.layers.Add()([act, attn]); # act.shape = (N_res, num_channel)
   act = tf.keras.layers.Dropout(rate = drop_rate)(act); # act.shape = (N_res, num_channel)
@@ -405,21 +408,33 @@ def FoldIteration(
   pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation = MultiRigidSidechain(num_channel, sidechain_num_channel, sidechain_num_residual_block)([rotation, scaled_translation, act, initial_act, aatype]);
   return tf.keras.Model(inputs = inputs, outputs = (affine, pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation, act));
 
-def StructureModule(seq_channel = 384, pair_channel = 128, num_channel = 384):
+def StructureModule(seq_channel = 384, num_layer = 8,
+    update_affine = True,
+    dist_epsilon = 1e-8,
+    pair_channel = 128, num_channel = 384, drop_rate = 0.1, num_layer_in_transition = 3,
+    num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8,
+    sidechain_num_channel = 128, sidechain_num_residual_block = 2, position_scale = 10.):
   seq_mask = tf.keras.Input(()); # seq_mask.shape = (N_res)
   single = tf.keras.Input((seq_channel,)); # single.shape = (N_res, seq_channel)
   pair = tf.keras.Input((None, pair_channel)); # pair.shape = (N_res, N_res, pair_channel)
-  sequence_mask = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(seq_mask);
-  act = tf.keras.layers.LayerNormalization()(single); # act.shape = (N_Res, seq_channel)
+  aatype = tf.keras.Input((), dtype = tf.int32); # aatype.shape = (N_res)
+  inputs = (seq_mask, single, pair, aatype);
+  sequence_mask = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(seq_mask); # sequence_mask.shape = (N_res, 1)
+  act = tf.keras.layers.LayerNormalization()(single); # act.shape = (N_res, seq_channel)
   initial_act = act;
   act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
+  # generate new affine
   quaternion = tf.keras.layers.Lambda(lambda x: tf.tile(tf.expand_dims([1.,0.,0.,0.], axis = 0), (tf.shape(x)[0], 1)))(sequence_mask); # quaternion.shape = (N_res, 4)
-  #generate_new_affine
   translation = tf.keras.layers.Lambda(lambda x: tf.zeros((tf.shape(x)[0], 3)))(sequence_mask); # translation.shape = (N_res, 3)
   normalized_quat = tf.keras.layers.Lambda(lambda x: x / tf.norm(x, axis = -1, keepdims = True))(quaternion); # quaternion.shape = (N_res, 4)
   affine = tf.keras.layers.Concatenate(axis = -1)([normalized_quat, translation]); # affine.shape = (N_res, 7)
   
   act_2d = tf.keras.layers.LayerNormalization()(pair); # act_2d.shape = (N_res, N_res, pair_channel)
+  for i in range(num_layer):
+    # activation = (act, affine(stop gradient to rotation)), outputs = (affine, pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation)
+    affine, pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation, act = FoldIteration(update_affine, dist_epsilon, pair_channel, num_channel, drop_rate, num_layer_in_transition, num_head,\
+      num_scalar_qk, num_scalar_v, num_point_qk, num_point_v, sidechain_num_channel, sidechain_num_residual_block, position_scale)([act, act_2d, sequence_mask, affine, initial_act, aatype]);
+    
   # TODO
 
 def PredictedLDDTHead(c_s, num_channels = 128, num_bins = 50, **kwargs):
