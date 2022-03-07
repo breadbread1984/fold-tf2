@@ -2,7 +2,7 @@
 
 import numpy as np;
 import tensorflow as tf;
-from residue_constants import restype_order, atom_order, atom_type_num, restype_rigid_group_default_frame;
+from residue_constants import restype_order, atom_order, atom_type_num, restype_rigid_group_default_frame, restype_atom14_to_rigid_group, restype_atom14_rigid_group_positions, restype_atom14_mask;
 
 def TemplatePairStack(c_t, num_head = 4, num_intermediate_channel = 64, num_block = 2, rate = 0.25, **kwargs):
   pair_act = tf.keras.Input((None, c_t)); # pair_act.shape = (N_res, N_res, c_t)
@@ -326,6 +326,24 @@ def torsion_angles_to_frames():
   all_frames_to_global_translation = tf.keras.layers.Lambda(lambda x: x[1] + tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1))([backb_to_global_rotation, backb_to_global_translation, all_frames_to_backb_translation]); # # all_frames_to_global_translation.shape = (N_res,8,3)
   return tf.keras.Model(inputs = inputs, outputs = (all_frames_to_global_rotation, all_frames_to_global_translation));
 
+def frames_and_literature_positions_to_atom14_pos():
+  aatype = tf.keras.Input((), dtype = tf.int32); # aatype.shape = (N_res)
+  all_frames_to_global_rotation = tf.keras.Input((8,3,3)); # all_frames_to_global_rotation.shape = (N_res, 8, 3, 3)
+  all_frames_to_global_translation = tf.keras.Input((8,3)); # all_frames_to_global_translation.shape = (N_res, 8, 3)
+  inputs = (aatype, all_frames_to_global_rotation, all_frames_to_global_translation);
+  # restype_atom14_to_rigid_group.shape = (21,14)
+  residx_to_group_idx = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_atom14_to_rigid_group})(aatype); # residx_to_group_idx.shape = (N_res, 14)
+  group_mask = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 8))(residx_to_group_idx); # group_mask.shape = (N_res, 14, 8)
+  map_atoms_to_global_rotation = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.expand_dims(x[0], axis = 1) * tf.reshape(x[1], (-1,14,8,1,1)), axis = 2))([all_frames_to_global_rotation, group_mask]); # map_atoms_to_global_rotation.shape = (N_res, 14, 3, 3)
+  map_atoms_to_global_translation = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.expand_dims(x[0], axis = 1) * tf.reshape(x[1], (-1,14,8,1)), axis = 2))([all_frames_to_global_translation, group_mask]); # map_atoms_to_global_translation.shape = (N_res, 14, 3)
+  # restype_atom14_rigid_group_positions.shape = (21,14,3)
+  lit_positions = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_atom14_rigid_group_positions})(aatype); # x.shape = (N_res, 14, 3)
+  pred_positions = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1) + x[1])([map_atoms_to_global_rotation, map_atoms_to_global_translation, lit_positions]); # pred_positions.shape = (N_res, 14, 3)
+  # restype_atom14_mask.shape = (21, 14)
+  mask = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_atom14_mask})(aatype); # mask.shape = (N_res, 14)
+  pred_positions = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask, pred_positions]); # pred_positions.shape = (N_res, 14, 3)
+  return tf.keras.Model(inputs = inputs, outputs = pred_positions);
+
 def MultiRigidSidechain(num_channel = 384, num_residual_block = 2):
   rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
   translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
@@ -349,6 +367,7 @@ def MultiRigidSidechain(num_channel = 384, num_residual_block = 2):
   unnormalized_angles = tf.keras.layers.Dense(14, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, 14)
   unnormalized_angles = tf.keras.layers.Reshape((7,2))(unnormalized_angles); # unnormalized_angles.shape = (N_res, 7, 2)
   angles = tf.keras.layers.Lambda(lambda x: x / tf.math.sqrt(tf.math.maximum(tf.math.reduce_sum(x**2,axis = -1, keepdims = True), 1e-12)))(unnormalized_angles); # angles.shape = (N_res, 7, 2)
+  all_frames_to_global_rotation, all_frames_to_global_translation = torsion_angles_to_frames()([aatype, rotation, translation, angles]); # all_frames_to_global_rotation.shape = (N_res, 8, 3, 3), all_frames_to_global_translation.shape = (N_res, 8, 3)
   
   # TODO
 
