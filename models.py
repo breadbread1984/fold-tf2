@@ -423,6 +423,7 @@ def StructureModule(seq_channel = 384, num_layer = 8,
   pair = tf.keras.Input((None, pair_channel)); # pair.shape = (N_res, N_res, pair_channel)
   aatype = tf.keras.Input((), dtype = tf.int32); # aatype.shape = (N_res)
   atom14_atom_exists = tf.keras.Input((14,)); # atom14_atom_exists.shape = (N_res, 14)
+  residx_atom37_to_atom14 = tf.keras.Input((37,)); # residx_atom37_to_atom14.shape = (N_res, 37)
   atom37_atom_exists = tf.keras.Input((37,)); # atom37_atom_exists.shape = (N_res, 37)
   inputs = (seq_mask, single, pair, aatype, atom14_atom_exists, atom37_atom_exists);
   # generate_affines
@@ -438,7 +439,7 @@ def StructureModule(seq_channel = 384, num_layer = 8,
   
   act_2d = tf.keras.layers.LayerNormalization()(pair); # act_2d.shape = (N_res, N_res, pair_channel)
   affine_results = list();
-  positions_results = list();
+  position_results = list();
   rotation_results = list();
   translation_results = list();
   for i in range(num_layer):
@@ -1067,4 +1068,12 @@ if __name__ == "__main__":
   initial_act = np.random.normal(size = (8,384));
   aatype = np.random.randint(0,21,size= (8));
   affine, positions, rotation, translation, act = FoldIteration()([act, static_feat_2d, sequence_mask, affine, initial_act, aatype]);
-  
+  seq_mask = np.random.normal(size = (15,));
+  single = np.random.normal(size = (15, 384));
+  pair = np.random.normal(size = (15,15,128));
+  aatype = np.random.randint(0,21,size = (15));
+  atom14_atom_exists = np.random.normal(size = (15,14));
+  residx_atom37_to_atom14 = np.random.randint(0, 14, size = (15,37));
+  atom37_atom_exists = np.random.normal(size = (15,37));
+  final_atom_positions, final_atom_mask, structure_module = StructureModule()([seq_mask, single,pair,aatype, atom14_atom_exists,atom37_atom_exists]);
+  print(final_atom_positions.shape, final_atom_mask.shape, structure_module.shape);
