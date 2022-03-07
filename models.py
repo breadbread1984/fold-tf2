@@ -388,7 +388,7 @@ def FoldIteration(
   normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,3], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
   rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res,3,3)
   # NOTE: https://github.com/deepmind/alphafold/blob/9c4ac8a92125942f73813649d9f6885532c1ee97/alphafold/model/folding.py#L381
-  # no gradient should be back propagation through rotation
+  # no gradient should be back propagated through rotation
   rotation = tf.keras.layers.Lambda(lambda x: tf.stop_gradient(x))(rotation);
   attn = InvariantPointAttention(dist_epsilon, pair_channel, num_channel, num_head, num_scalar_qk, num_scalar_v, num_point_qk, num_point_v)([act, static_feat_2d, sequence_mask, rotation, translation]); # attn.shape = (N_res, num_head * num_scalar_v + 4 * num_head * num_point_v + num_head * pair_channel)
   act = tf.keras.layers.Add()([act, attn]); # act.shape = (N_res, num_channel)
@@ -412,6 +412,14 @@ def FoldIteration(
   # all_frames_to_global_translation.shape = (N_res, 8, 3)
   return tf.keras.Model(inputs = inputs, outputs = (affine, pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation, act));
 
+def atom14_to_atom37():
+  atom14_data = tf.keras.Input((14,)); # atom14_data.shape = (N_res, 14)
+  residx_atom37_to_atom14 = tf.keras.Input((37,)); # residx_atom37_to_atom14.shape = (N_res, 37)
+  atom37_atom_exists = tf.keras.Input((37,)); # atom37_atom_exists.shape = (N_res, 37)
+  atom37_data = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], x[1], batch_dims = 1))([atom14_data, residx_atom37_to_atom14]); # atom37_data.shape = (N_res, 37)
+  atom37_data = tf.keras.layers.Multiply()([atom37_data, atom37_atom_exists]); # atom37_data.shape = (N_res, 37)
+  return tf.keras.Model(inputs = (atom14_data, residx_atom37_to_atom14, atom37_atom_exists), outputs = atom37_data);
+
 def StructureModule(seq_channel = 384, num_layer = 8,
     update_affine = True,
     dist_epsilon = 1e-8,
@@ -422,7 +430,9 @@ def StructureModule(seq_channel = 384, num_layer = 8,
   single = tf.keras.Input((seq_channel,)); # single.shape = (N_res, seq_channel)
   pair = tf.keras.Input((None, pair_channel)); # pair.shape = (N_res, N_res, pair_channel)
   aatype = tf.keras.Input((), dtype = tf.int32); # aatype.shape = (N_res)
-  inputs = (seq_mask, single, pair, aatype);
+  atom14_atom_exists = tf.keras.Input((14,)); # atom14_atom_exists.shape = (N_res, 14)
+  atom37_atom_exists = tf.keras.Input((37,)); # atom37_atom_exists.shape = (N_res, 37)
+  inputs = (seq_mask, single, pair, aatype, atom14_atom_exists, atom37_atom_exists);
   # generate_affines
   sequence_mask = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(seq_mask); # sequence_mask.shape = (N_res, 1)
   act = tf.keras.layers.LayerNormalization()(single); # act.shape = (N_res, seq_channel)
@@ -451,8 +461,25 @@ def StructureModule(seq_channel = 384, num_layer = 8,
   position = tf.keras.layers.Lambda(lambda x: tf.stack(x, axis = 0))(position_results); # position.shape = (num_layer, N_res, 14, 3)
   rotation = tf.keras.layers.Lambda(lambda x: tf.stack(x, axis = 0))(rotation_results); # rotation.shape = (num_layer, N_res, 3, 3)
   translation = tf.keras.layers.Lambda(lambda x: tf.stack(x, axis = 0))(translation_results); # translation.shape = (num_layer, N_res, 3)
-  
-  # TODO
+  structure_module = act;
+  traj = tf.keras.layers.Lambda(lambda x, s: x * tf.constant([1.,1.,1.,1.,s,s,s]), arguments = {'s': position_scale})(affine); # traj.shape = (num_layer, N_res, 7)
+  final_atom14_positions = tf.keras.layers.Lambda(lambda x: x[-1])(position); # atom14_pred_positions.shape = (N_res, 14, 3)
+  final_atom14_mask = atom14_atom_exists; # final_atom14_mask.shape = (N_res, 14)
+  # atom14_to_atom37
+  atom37_pred_positions = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], x[1], batch_dims = 1))([final_atom14_positions, residx_atom37_to_atom14]); # atom37_pred_positions.shape = (N_res, 37, 3)
+  atom37_pred_positions = tf.keras.layers.Lambda(lambda x: x[0] * tf.expand_dims(x[1], axis = -1))([atom37_pred_positions, atom37_atom_exists]); # atom37_pred_positions.shape = (N_res, 37, 3)
+  final_atom_positions = atom37_pred_positions;
+  final_atom_mask = atom37_atom_exists;
+  final_affines = tf.keras.layers.Lambda(lambda x: x[-1])(traj); # final_affines.shape = (N_res, 7)
+  # NOTE: representation: structure_module,
+  #       traj: traj,
+  #       sidechains: position, rotation, translation,
+  #       final_atom14_positions: final_atom14_positions,
+  #       final_atom14_mask: final_atom14_mask,
+  #       final_atom_positions: final_atom_positions,
+  #       final_atom_mask: final_atom_mask
+  #       final_affines: final_affines
+  return tf.keras.Model(inputs = inputs, outputs = (structure_module,traj,position,rotation,translation,final_atom14_positions,final_atom14_mask,final_atom_positions, final_atom_mask, final_affines) if tf.keras.backend.learning_phase() == 1 else (final_atom_positions, final_atom_mask, structure_module));
 
 def PredictedLDDTHead(c_s, num_channels = 128, num_bins = 50, **kwargs):
   act = tf.keras.Input((c_s,)); # act.shape = (N_res, c_s)
