@@ -412,14 +412,6 @@ def FoldIteration(
   # all_frames_to_global_translation.shape = (N_res, 8, 3)
   return tf.keras.Model(inputs = inputs, outputs = (affine, pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation, act));
 
-def atom14_to_atom37():
-  atom14_data = tf.keras.Input((14,)); # atom14_data.shape = (N_res, 14)
-  residx_atom37_to_atom14 = tf.keras.Input((37,)); # residx_atom37_to_atom14.shape = (N_res, 37)
-  atom37_atom_exists = tf.keras.Input((37,)); # atom37_atom_exists.shape = (N_res, 37)
-  atom37_data = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], x[1], batch_dims = 1))([atom14_data, residx_atom37_to_atom14]); # atom37_data.shape = (N_res, 37)
-  atom37_data = tf.keras.layers.Multiply()([atom37_data, atom37_atom_exists]); # atom37_data.shape = (N_res, 37)
-  return tf.keras.Model(inputs = (atom14_data, residx_atom37_to_atom14, atom37_atom_exists), outputs = atom37_data);
-
 def StructureModule(seq_channel = 384, num_layer = 8,
     update_affine = True,
     dist_epsilon = 1e-8,
