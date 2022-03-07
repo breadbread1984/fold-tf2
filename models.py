@@ -344,7 +344,7 @@ def frames_and_literature_positions_to_atom14_pos():
   pred_positions = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0], axis = -1) * x[1])([mask, pred_positions]); # pred_positions.shape = (N_res, 14, 3)
   return tf.keras.Model(inputs = inputs, outputs = pred_positions);
 
-def MultiRigidSidechain(num_channel = 384, num_residual_block = 2):
+def MultiRigidSidechain(num_channel = 384, sidechain_num_channel = 128, num_residual_block = 2):
   rotation = tf.keras.Input((3,3)); # rotation.shape = (N_res, 3, 3)
   translation = tf.keras.Input((3,)); # translation.shape = (N_res, 3)
   act = tf.keras.Input((num_channel,)); # act.shape = (N_res, num_channel)
@@ -352,16 +352,16 @@ def MultiRigidSidechain(num_channel = 384, num_residual_block = 2):
   aatype = tf.keras.Input(()); # aatype.shape = (N_res,)
   inputs = (rotation, translation, act, initial_act, aatype);
   act = tf.keras.layers.ReLU()(act);
-  act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
+  act = tf.keras.layers.Dense(sidechain_num_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
   initial_act = tf.keras.layers.ReLU()(initial_act);
-  initial_act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(initial_act); # initial_act.shape = (N_res, num_channel)
+  initial_act = tf.keras.layers.Dense(sidechain_num_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(initial_act); # initial_act.shape = (N_res, num_channel)
   act = tf.keras.layers.Add()([act, initial_act]); # act.shape = (N_res, num_channel)
   for i in range(num_residual_block):
     old_act = act;
     act = tf.keras.layers.ReLU()(act);
-    act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
+    act = tf.keras.layers.Dense(sidechain_num_channel, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
     act = tf.keras.layers.ReLU()(act);
-    act = tf.keras.layers.Dense(num_channel, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
+    act = tf.keras.layers.Dense(sidechain_num_channel, kernel_initializer = tf.keras.initializers.Constant(0.), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, num_channel)
     act = tf.keras.layers.Add()([act, old_act]);
   act = tf.keras.layers.ReLU()(act);
   unnormalized_angles = tf.keras.layers.Dense(14, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(act); # act.shape = (N_res, 14)
@@ -375,12 +375,14 @@ def FoldIteration(
     update_affine = True,
     dist_epsilon = 1e-8,
     pair_channel = 128, num_channel = 384, drop_rate = 0.1, num_layer_in_transition = 3,
-    num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8,):
+    num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8,
+    sidechain_num_channel = 128, sidechain_num_residual_block = 2, position_scale = 10.):
   act = tf.keras.Input((num_channel,)); # act.shape = (N_res, num_channel)
   static_feat_2d = tf.keras.Input((None, pair_channel)); # static_feat_2d.shape = (N_res, N_res, pair_channel)
   sequence_mask = tf.keras.Input((1,)); # sequence_mask.shape = (N_res, 1)
   affine = tf.keras.Input((7,)); # affine.shape = (N_res, 7)
   initial_act = tf.keras.Input((num_channel,)); # initial_act.shape = (N_res, num_channel)
+  aatype = tf.keras.Input(()); # aatype.shape = (N_res)
   inputs = (act, static_feat_2d, sequence_mask, affine, initial_act);
   normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,3], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
   rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res,3,3)
@@ -399,7 +401,8 @@ def FoldIteration(
     affine = pre_compose()([affine_update, normalized_quat, translation]); # affine.shape = (N_res, 7)
     normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,3], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
     rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res, 3, 3)
-    
+  scaled_translation = tf.keras.layers.Lambda(lambda x, s: s * x, arguments = {'s': position_scale})(translation); # scaled_translatoin.shape = (N_res, 3)
+  pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation = MultiRigidSidechain(num_channel, sidechain_num_channel, sidechain_num_residual_block)([rotation, scaled_translation, act, initial_act, aatype]);
   # HERE
 
 def StructureModule(seq_channel = 384, pair_channel = 128, num_channel = 384):
@@ -1003,6 +1006,6 @@ if __name__ == "__main__":
   translation = np.random.normal(size = (10,3));
   act = np.random.normal(size = (10, 384));
   initial_act = np.random.normal(size = (10, 384));
-  aatype = np.random.normal(size = (10,));
+  aatype = np.random.randint(0, 21, size = (10,));
   pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation = MultiRigidSidechain()([rotation, translation, act, initial_act, aatype]);
   print(pred_positions.shape, all_frames_to_global_rotation.shape, all_frames_to_global_translation.shape);
