@@ -400,7 +400,7 @@ def FoldIteration(
     normalized_quat, translation = tf.keras.layers.Lambda(lambda x: tf.split(x, [4,3], axis = -1))(affine); # quaternion.shape = (N_res, 4), translation.shape = (N_res, 3)
     rotation = quat_to_rot()(normalized_quat); # rotation.shape = (N_res, 3, 3)
     
-  # TODO
+  # HERE
 
 def StructureModule(seq_channel = 384, pair_channel = 128, num_channel = 384):
   seq_mask = tf.keras.Input(()); # seq_mask.shape = (N_res)
@@ -999,3 +999,10 @@ if __name__ == "__main__":
   translation = np.random.normal(size = (15,8,3));
   pred_positions = frames_and_literature_positions_to_atom14_pos()([aatype, rotation, translation]);
   print(pred_positions.shape);
+  rotation = np.random.normal(size = (10,3,3));
+  translation = np.random.normal(size = (10,3));
+  act = np.random.normal(size = (10, 384));
+  initial_act = np.random.normal(size = (10, 384));
+  aatype = np.random.normal(size = (10,));
+  pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation = MultiRigidSidechain()([rotation, translation, act, initial_act, aatype]);
+  print(pred_positions.shape, all_frames_to_global_rotation.shape, all_frames_to_global_translation.shape);
