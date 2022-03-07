@@ -341,7 +341,7 @@ def frames_and_literature_positions_to_atom14_pos():
   pred_positions = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1) + x[1])([map_atoms_to_global_rotation, map_atoms_to_global_translation, lit_positions]); # pred_positions.shape = (N_res, 14, 3)
   # restype_atom14_mask.shape = (21, 14)
   mask = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_atom14_mask})(aatype); # mask.shape = (N_res, 14)
-  pred_positions = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([mask, pred_positions]); # pred_positions.shape = (N_res, 14, 3)
+  pred_positions = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0], axis = -1) * x[1])([mask, pred_positions]); # pred_positions.shape = (N_res, 14, 3)
   return tf.keras.Model(inputs = inputs, outputs = pred_positions);
 
 def MultiRigidSidechain(num_channel = 384, num_residual_block = 2):
@@ -995,3 +995,7 @@ if __name__ == "__main__":
   rotation, translation = torsion_angles_to_frames()([aatype, backb_to_global_rotation, backb_to_global_translation, torsion_angles_sin_cos]);
   print(rotation.shape);
   print(translation.shape);
+  rotation = np.random.normal(size = (15,8,3,3));
+  translation = np.random.normal(size = (15,8,3));
+  pred_positions = frames_and_literature_positions_to_atom14_pos()([aatype, rotation, translation]);
+  print(pred_positions.shape);
