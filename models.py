@@ -1015,5 +1015,5 @@ if __name__ == "__main__":
   affine = np.random.normal(size = (8,7));
   initial_act = np.random.normal(size = (8,384));
   aatype = np.random.randint(0,21,size= (8));
-  affine, positions, rotation, translation, act = FoldIteration([act, static_feat_2d, sequence_mask, affine, initial_act, aatype]);
+  affine, positions, rotation, translation, act = FoldIteration()([act, static_feat_2d, sequence_mask, affine, initial_act, aatype]);
   
