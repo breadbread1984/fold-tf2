@@ -969,3 +969,10 @@ if __name__ == "__main__":
   translation = np.random.normal(size = (10, 3));
   affine = pre_compose()([update, normalized_quat, translation]);
   print(affine.shape);
+  aatype = np.random.randint(0,21,size = (15,));
+  backb_to_global_rotation = np.random.normal(size = (15,3,3));
+  backb_to_global_translation = np.random.normal(size = (15,3));
+  torsion_angles_sin_cos = np.random.normal(size = (15,7,2));
+  rotation, translation = torsion_angles_to_frames()([aatype, backb_to_global_rotation, backb_to_global_translation, torsion_angles_sin_cos]);
+  print(rotation.shape);
+  print(translation.shape);
