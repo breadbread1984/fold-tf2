@@ -965,10 +965,11 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
   inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, \
             atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists];
 
+  prev_pos = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[1], n, 3)), arguments = {'n': atom_type_num})(target_feat); # prev_pos.shape = (N_res, atom_type_num, 3)
+  prev_msa_first_row = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[1], n)), arguments = {'n': msa_channel})(target_feat); # prev_msa_first_row.shape = (N_res, msa_channel)
+  prev_pair = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[1], tf.shape(x)[1], n)), arguments = {'n': pair_channel})(target_feat); # prev_pair.shape = (N_res, N_res, pair_channel)
+  impl = None;
   if num_recycle > 0:
-    prev_pos = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[1], n, 3)), arguments = {'n': atom_type_num})(target_feat); # prev_pos.shape = (N_res, atom_type_num, 3)
-    prev_msa_first_row = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[1], n)), arguments = {'n': msa_channel})(target_feat); # prev_msa_first_row.shape = (N_res, msa_channel)
-    prev_pair = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[1], tf.shape(x)[1], n)), arguments = {'n': pair_channel})(target_feat); # prev_pair.shape = (N_res, N_res, pair_channel)
     for recycle_idx in range(num_recycle):
       if resample_msa_in_recycling:
         num_ensemble = batch_size // (num_recycle + 1);
@@ -977,7 +978,7 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
       if impl is None:
         impl = AlphaFoldIteration(num_ensemble, return_representations, c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins, recycle_features, max_relative_feature, template_enabled, extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel,
                                   head_masked_msa_output_num, head_distogram_first_break, head_distogram_last_break, head_distogram_num_bins, head_distogram_weight, num_layer, update_affine, dist_epsilon, structure_module_num_channel, drop_rate, num_layer_in_transition, num_head, num_scalar_qk, num_scalar_v,
-                                  num_point_qk, num_point_v, sidechain_num_channel, sidchain_num_residual_block, position_scale, lddt_num_channel, lddt_num_bins, aligned_error_max_bin, aligned_error_num_bins);
+                                  num_point_qk, num_point_v, sidechain_num_channel, sidechain_num_residual_block, position_scale, lddt_num_channel, lddt_num_bins, aligned_error_max_bin, aligned_error_num_bins);
       if resample_msa_in_recycling:
         def slice_recycle_idx(inputs):
           start = recycle_idx * num_ensemble;
@@ -994,173 +995,18 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
       prev_msa_first_row = outputs[0];
       prev_pair = outputs[1];
       prev_pos = outputs[5];
-      # TODO
+  else:
+    # NOTE: will not use prev_pos, prev_msa_first_row, prev_pair
+    recycle_pos = False;
+    recycle_features = False;
+    impl = AlphaFoldIteration(num_ensemble, return_representations, c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins, recycle_features, max_relative_feature, template_enabled, extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel,
+                              head_masked_msa_output_num, head_distogram_first_break, head_distogram_last_break, head_distogram_num_bins, head_distogram_weight, num_layer, update_affine, dist_epsilon, structure_module_num_channel, drop_rate, num_layer_in_transition, num_head, num_scalar_qk, num_scalar_v,
+                              num_point_qk, num_point_v, sidechain_num_channel, sidchain_num_residual_block, position_scale, lddt_num_channel, lddt_num_bins, aligned_error_max_bin, aligned_error_num_bins);
+  outputs = impl(ensemble + [prev_pos, prev_msa_first_row, prev_pair]);
+  return tf.keras.Model(inputs = inputs, outputs = outputs);
 
 if __name__ == "__main__":
   import numpy as np;
-  """
-  q_data = np.random.normal(size = (4, 20, 64));
-  m_data = np.random.normal(size = (4, 10, 64));
-  bias = np.random.normal(size = (4, 1, 1, 10));
-  results = Attention(100)([q_data, m_data, bias]);
-  print(results.shape);
-  q_data = np.random.normal(size = (4, 20, 64));
-  m_data = np.random.normal(size = (4, 20, 64));
-  q_mask = np.random.randint(low = 0, high = 2, size = (4, 20, 64));
-  results = GlobalAttention(100)([q_data, m_data, q_mask]);
-  print(results.shape);
-  msa_act = np.random.normal(size = (4, 20, 64));
-  msa_mask = np.random.randint(low = 0, high = 2, size = (4, 20));
-  pair_act = np.random.normal(size = (20, 20, 32));
-  results = MSARowAttentionWithPairBias(64, 32)([msa_act, msa_mask, pair_act]);
-  print(results.shape);
-  results = MSAColumnAttention(64)([msa_act, msa_mask]);
-  print(results.shape);
-  results = MSAColumnGlobalAttention(64)([msa_act, msa_mask]);
-  print(results.shape);
-  pair_act = np.random.normal(size = (20, 20, 64));
-  pair_mask = np.random.randint(low = 0, high = 2, size = (20, 20));
-  results = TriangleAttention(64)([pair_act, pair_mask]);
-  print(results.shape);
-  results = TriangleMultiplication(64, mode = 'outgoing')([pair_act, pair_mask]);
-  print(results.shape);
-  results = TriangleMultiplication(64, mode = 'incoming')([pair_act, pair_mask]);
-  print(results.shape);
-  results = TemplatePairStack(64)([pair_act, pair_mask]);
-  print(results.shape);
-  results = Transition(64)([pair_act, pair_mask]);
-  print(results.shape);
-  results = OuterProductMean(64, 64)([pair_act, pair_mask]);
-  print(results.shape);
-  positions = np.random.normal(size = (10,3));
-  results = dgram_from_positions(3.25, 50.75)(positions);
-  print('dgram2d.shape = ', results.shape);
-  all_atom_positions = np.random.normal(size = (10, atom_type_num, 3));
-  aatype = np.random.normal(size = (10,));
-  all_atom_masks = np.random.randint(low = 0, high = 2, size = (10, atom_type_num));
-  pseudo_beta = pseudo_beta_fn()([aatype, all_atom_positions]);
-  print(pseudo_beta.shape);
-  pseudo_beta, pseudo_beta_mask = pseudo_beta_fn(use_mask = True)([aatype, all_atom_positions, all_atom_masks]);
-  print(pseudo_beta_mask.shape);
-  msa_act = np.random.normal(size = (4, 20, 32));
-  pair_act = np.random.normal(size = (20, 20, 64));
-  msa_mask = np.random.normal(size = (4, 20));
-  pair_mask = np.random.normal(size = (20, 20));
-  msa_act, pair_act = EvoformerIteration(32, 64, False)([msa_act, pair_act, msa_mask, pair_mask]);
-  print(msa_act.shape, pair_act.shape);
-  msa_act, pair_act = EvoformerIteration(32, 64, False, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
-  print(msa_act.shape, pair_act.shape);
-  msa_act, pair_act = EvoformerIteration(32, 64, True)([msa_act, pair_act, msa_mask, pair_mask]);
-  print(msa_act.shape, pair_act.shape);
-  msa_act, pair_act = EvoformerIteration(32, 64, True, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
-  print(msa_act.shape, pair_act.shape);
-  target_feat = np.random.normal(size = (20, 22));
-  msa_feat = np.random.normal(size = (4, 20, 25));
-  msa_mask = np.random.normal(size = (4, 20));
-  seq_mask = np.random.normal(size = (20,));
-  aatype = np.random.normal(size = (20,));
-  residue_index = np.random.randint(low = 0, high = 10, size = (20,));
-  extra_msa = np.random.randint(low = 0, high = 10, size = (4, 20));
-  extra_msa_mask = np.random.normal(size = (4, 20));
-  extra_has_deletion = np.random.normal(size = (4, 20));
-  extra_deletion_value = np.random.normal(size = (4, 20));
-  prev_pos = np.random.normal(size = (20, atom_type_num, 3));
-  prev_msa_first_row = np.random.normal(size = (20, 256));
-  prev_pair = np.random.normal(size = (20, 20, 128));
-  embeddings_and_evoformer = EmbeddingsAndEvoformer();
-  embeddings_and_evoformer.save('embedding.h5')
-  single_activations, pair_activations, msa_activations, single_msa_activations = embeddings_and_evoformer([target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, prev_pos, prev_msa_first_row, prev_pair]);
-  print(single_activations.shape);
-  print(pair_activations.shape);
-  print(msa_activations.shape);
-  """
-  """
-  n_xyz = np.random.normal(size = (10,3));
-  ca_xyz = np.random.normal(size = (10,3));
-  c_xyz = np.random.normal(size = (10,3));
-  translation, rot_matrix = make_canonical_transform()([n_xyz, ca_xyz, c_xyz]);
-  print(translation.shape, rot_matrix.shape);
-  rot = np.random.normal(size = (4, 3, 3));
-  quat = rot_to_quat(True)(rot);
-  print(quat.shape);
-  rot = np.random.normal(size = (3, 3, 4));
-  quat = rot_to_quat(False)(rot);
-  print(quat.shape);
-  quat = np.random.normal(size = (10, 4)); #N_template, atom_type_num, 4
-  rot = quat_to_rot()(quat);
-  print(rot.shape);
-  points = np.random.normal(size = (3,1,5));
-  rotation = np.random.normal(size = (3, 3, 4));
-  translation = np.random.normal(size = (3, 4));
-  results = invert_point(extra_dims = 1, unstack_inputs = False)([rotation, translation, points]);
-  print('extra_dims = 1, unstack_inputs = False:', results.shape);
-  results = apply_to_point(extra_dims = 1, unstack_inputs = False)([rotation, translation, points]);
-  print('extra_dims = 1, unstack_inputs = False:', results.shape);
-  points = np.random.normal(size = (3,1,5,6));
-  results = invert_point(extra_dims = 2, unstack_inputs = False)([rotation, translation, points]);
-  print('extra_dims = 2, unstack_inputs = False:', results.shape);
-  results = apply_to_point(extra_dims = 2, unstack_inputs = False)([rotation, translation, points]);
-  print('extra_dims = 2, unstack_inputs = False:', results.shape);
-  points = np.random.normal(size = (1,5,3));
-  rotation = np.random.normal(size = (4, 3, 3));
-  translation = np.random.normal(size = (4, 3));
-  results = invert_point(extra_dims = 1, unstack_inputs = True)([rotation, translation, points]);
-  print('extra_dims = 1, unstack_inputs = True:', results.shape);
-  results = apply_to_point(extra_dims = 1, unstack_inputs = True)([rotation, translation, points]);
-  print('extra_dims = 1, unstack_inputs = True:', results.shape);
-  points = np.random.normal(size = (1,5,6, 3));
-  results = invert_point(extra_dims = 2, unstack_inputs = True)([rotation, translation, points]);
-  print('extra_dims = 2, unstack_inputs = True:', results.shape);
-  results = apply_to_point(extra_dims = 2, unstack_inputs = True)([rotation, translation, points]);
-  print('extra_dims = 2, unstack_inputs = True:', results.shape);
-  
-  inputs_1d = np.random.normal(size = (4, 384));
-  inputs_2d = np.random.normal(size = (4, 4, 128));
-  mask = np.random.normal(size = (4,1));
-  rotation = np.random.normal(size = (4,3,3));
-  translation = np.random.normal(size = (4,3));
-  final_act = InvariantPointAttention()([inputs_1d, inputs_2d, mask, rotation, translation]);
-  print(final_act.shape);
-  update = np.random.normal(size = (10,6));
-  normalized_quat = np.random.normal(size = (10,4));
-  translation = np.random.normal(size = (10, 3));
-  affine = pre_compose()([update, normalized_quat, translation]);
-  print(affine.shape);
-  aatype = np.random.randint(0,21,size = (15,));
-  backb_to_global_rotation = np.random.normal(size = (15,3,3));
-  backb_to_global_translation = np.random.normal(size = (15,3));
-  torsion_angles_sin_cos = np.random.normal(size = (15,7,2));
-  rotation, translation = torsion_angles_to_frames()([aatype, backb_to_global_rotation, backb_to_global_translation, torsion_angles_sin_cos]);
-  print(rotation.shape);
-  print(translation.shape);
-  rotation = np.random.normal(size = (15,8,3,3));
-  translation = np.random.normal(size = (15,8,3));
-  pred_positions = frames_and_literature_positions_to_atom14_pos()([aatype, rotation, translation]);
-  print(pred_positions.shape);
-  rotation = np.random.normal(size = (10,3,3));
-  translation = np.random.normal(size = (10,3));
-  act = np.random.normal(size = (10, 384));
-  initial_act = np.random.normal(size = (10, 384));
-  aatype = np.random.randint(0, 21, size = (10,));
-  pred_positions, all_frames_to_global_rotation, all_frames_to_global_translation = MultiRigidSidechain()([rotation, translation, act, initial_act, aatype]);
-  print(pred_positions.shape, all_frames_to_global_rotation.shape, all_frames_to_global_translation.shape);
-  act = np.random.normal(size = (8, 384));
-  static_feat_2d = np.random.normal(size = (8,8,128));
-  sequence_mask = np.random.normal(size = (8,1));
-  affine = np.random.normal(size = (8,7));
-  initial_act = np.random.normal(size = (8,384));
-  aatype = np.random.randint(0,21,size= (8));
-  affine, positions, rotation, translation, act = FoldIteration()([act, static_feat_2d, sequence_mask, affine, initial_act, aatype]);
-  seq_mask = np.random.normal(size = (15,));
-  single = np.random.normal(size = (15, 384));
-  pair = np.random.normal(size = (15,15,128));
-  aatype = np.random.randint(0,21,size = (15));
-  atom14_atom_exists = np.random.normal(size = (15,14));
-  residx_atom37_to_atom14 = np.random.randint(0, 14, size = (15,atom_type_num));
-  atom37_atom_exists = np.random.normal(size = (15,atom_type_num));
-  final_atom_positions, final_atom_mask, structure_module = StructureModule()([seq_mask, single,pair,aatype, atom14_atom_exists,residx_atom37_to_atom14,atom37_atom_exists]);
-  print(final_atom_positions.shape, final_atom_mask.shape, structure_module.shape);
-  """
   target_feat = np.random.normal(size = (4, 15, 22));
   msa_feat = np.random.normal(size = (4, 10, 15, 25));
   msa_mask = np.random.normal(size = (4, 10, 15));
@@ -1177,7 +1023,15 @@ if __name__ == "__main__":
   prev_pos = np.random.normal(size = (15,37,3));
   prev_msa_first_row = np.random.normal(size = (15, 256));
   prev_pair = np.random.normal(size = (15,15,128));
+  '''
   results = AlphaFoldIteration(num_ensemble = 4)([target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
                                                   extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
                                                   atom37_atom_exists, prev_pos, prev_msa_first_row, prev_pair]);
+  print([result.shape for result in results]);
+  '''
+  alphafold = AlphaFold(batch_size = 4);
+  alphafold.save('alphafold.h5');
+  results = alphafold([target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
+                                       extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
+                                       atom37_atom_exists]);
   print([result.shape for result in results]);
