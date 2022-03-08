@@ -472,7 +472,7 @@ def StructureModule(seq_channel = 384, num_layer = 8,
   #       final_atom_positions: final_atom_positions,
   #       final_atom_mask: final_atom_mask
   #       final_affines: final_affines
-  return tf.keras.Model(inputs = inputs, outputs = (structure_module,traj,position,rotation,translation,final_atom14_positions,final_atom14_mask,final_atom_positions, final_atom_mask, final_affines) if tf.keras.backend.learning_phase() == 1 else (final_atom_positions, final_atom_mask, structure_module));
+  return tf.keras.Model(inputs = inputs, outputs = (final_atom_positions, final_atom_mask, structure_module,traj,position,rotation,translation,final_atom14_positions,final_atom14_mask, final_affines) if tf.keras.backend.learning_phase() == 1 else (final_atom_positions, final_atom_mask, structure_module));
 
 def PredictedLDDTHead(c_s, num_channels = 128, num_bins = 50, **kwargs):
   act = tf.keras.Input((c_s,)); # act.shape = (N_res, c_s)
@@ -876,7 +876,6 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
   extra_msa_mask = tf.keras.Input((None, None,), batch_size = num_ensemble); # extra_msa_mask.shape = (num_ensemble, N_seq, N_res)
   extra_has_deletion = tf.keras.Input((None, None,), batch_size = num_ensemble); # extra_has_deletion.shape = (num_ensemble, N_seq, N_res)
   extra_deletion_value = tf.keras.Input((None, None,), batch_size = num_ensemble); # extra_deletion_value.shape = (num_ensemble, N_seq, N_res)
-  #seq_length = tf.keras.Input((None,), batch_size = num_ensemble); # seq_length.shape = (num_ensemble, N_res,)
   atom14_atom_exists = tf.keras.Input((None, 14), batch_size = num_ensemble); # atom14_atom_exists.shape = (num_ensemble, N_res, 14)
   residx_atom37_to_atom14 = tf.keras.Input((None, atom_type_num), dtype = tf.int32, batch_size = num_ensemble); # residx_atom37_to_atom14.shape = (num_ensemble, N_res, 37)
   atom37_atom_exists = tf.keras.Input((None, atom_type_num), batch_size = num_ensemble); # atom37_atom_exists.shape = (num_ensemble, N_res, 37)
@@ -930,14 +929,14 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
       seq_mask, single, pair, aatype, atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists
     ]);
   if tf.keras.backend.learning_phase() == 1:
-    structure_module, traj, sidechain_position, sidechain_rotation, sidechain_translation, final_atom14_positions, final_atom14_mask, final_atom_positions, final_atom_mask, final_affine = structure_module_results;
+    final_atom_positions, final_atom_mask, structure_module, traj, sidechain_position, sidechain_rotation, sidechain_translation, final_atom14_positions, final_atom14_mask, final_affine = structure_module_results;
   else:
     final_atom_positions, final_atom_mask, structure_module = structure_module_results;
   lddt_logits = PredictedLDDTHead(structure_module_num_channel, lddt_num_channel, lddt_num_bins)(structure_module); # logits.shape = (N_res, lddt_num_bins)
   aligned_error_logits, aligned_error_breaks = PredictedAlignedErrorHead(pair_channel, aligned_error_num_bins, aligned_error_max_bin)(pair);
-  return tf.keras.Model(inputs = inputs, outputs = [masked_msa, distogram_logits, distogram_breaks,] + list(structure_module_results) + [lddt_logits, aligned_error_logits, aligned_error_breaks]);
+  return tf.keras.Model(inputs = inputs, outputs = [msa_first_row, pair, masked_msa, distogram_logits, distogram_breaks,] + list(structure_module_results) + [lddt_logits, aligned_error_logits, aligned_error_breaks]);
 
-def AlphaFold(num_ensemble, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
+def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
               head_masked_msa_output_num = 23,
               head_distogram_first_break = 2.3125, head_distogram_last_break = 21.6875, head_distogram_num_bins = 64, head_distogram_weight = 0.3,
               num_layer = 8,
@@ -947,12 +946,55 @@ def AlphaFold(num_ensemble, return_representations = False, c_m = 22, c_z = 25, 
               sidechain_num_channel = 128, sidechain_num_residual_block = 2, position_scale = 10.,
               lddt_num_channel = 128, lddt_num_bins = 50,
               aligned_error_max_bin = 31, aligned_error_num_bins = 64,
-              num_recycle = 3):
-  impl = AlphaFoldIteration(num_ensemble, return_representations, c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins, recycle_features, max_relative_feature, template_enabled, extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel,
-                            head_masked_msa_output_num, head_distogram_first_break, head_distogram_last_break, head_distogram_num_bins, head_distogram_weight, num_layer, update_affine, dist_epsilon, structure_module_num_channel, drop_rate, num_layer_in_transition, num_head, num_scalar_qk, num_scalar_v,
-                            num_point_qk, num_point_v, sidechain_num_channel, sidchain_num_residual_block, position_scale, lddt_num_channel, lddt_num_bins, aligned_error_max_bin, aligned_error_num_bins);
+              num_recycle = 3, resample_msa_in_recycling = True):
+  # ensembled batched
+  target_feat = tf.keras.Input((None, c_m,), batch_size = batch_size); # target_feat.shape = (batch, N_res, c_m)
+  msa_feat = tf.keras.Input((None, None, c_z), batch_size = batch_size); # msa_feat.shape = (batch, N_seq, N_res, c_z)
+  msa_mask = tf.keras.Input((None, None,), batch_size = batch_size); # msa_mask.shape = (batch, N_seq, N_res)
+  seq_mask = tf.keras.Input((None,), batch_size = batch_size); # seq_mask.shape = (batch, N_res)
+  aatype = tf.keras.Input((None,), batch_size = batch_size); # aatype.shape = (batch, N_res)
+  residue_index = tf.keras.Input((None,), dtype = tf.int32, batch_size = batch_size); # residue_index.shape = (batch, N_res)
+  extra_msa = tf.keras.Input((None, None,), dtype = tf.int32, batch_size = batch_size); # extra_msa.shape = (batch, N_seq, N_res)
+  extra_msa_mask = tf.keras.Input((None, None,), batch_size = batch_size); # extra_msa_mask.shape = (batch, N_seq, N_res)
+  extra_has_deletion = tf.keras.Input((None, None,), batch_size = batch_size); # extra_has_deletion.shape = (batch, N_seq, N_res)
+  extra_deletion_value = tf.keras.Input((None, None,), batch_size = batch_size); # extra_deletion_value.shape = (batch, N_seq, N_res)
+  atom14_atom_exists = tf.keras.Input((None, 14), batch_size = batch_size); # atom14_atom_exists.shape = (batch, N_res, 14)
+  residx_atom37_to_atom14 = tf.keras.Input((None, atom_type_num), dtype = tf.int32, batch_size = batch_size); # residx_atom37_to_atom14.shape = (batch, N_res, 37)
+  atom37_atom_exists = tf.keras.Input((None, atom_type_num), batch_size = batch_size); # atom37_atom_exists.shape = (batch, N_res, 37)
+
+  inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, \
+            atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists];
+
   if num_recycle > 0:
-    pass
+    prev_pos = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[1], n, 3)), arguments = {'n': atom_type_num})(target_feat); # prev_pos.shape = (N_res, atom_type_num, 3)
+    prev_msa_first_row = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[1], n)), arguments = {'n': msa_channel})(target_feat); # prev_msa_first_row.shape = (N_res, msa_channel)
+    prev_pair = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[1], tf.shape(x)[1], n)), arguments = {'n': pair_channel})(target_feat); # prev_pair.shape = (N_res, N_res, pair_channel)
+    for recycle_idx in range(num_recycle):
+      if resample_msa_in_recycling:
+        num_ensemble = batch_size // (num_recycle + 1);
+      else:
+        num_ensemble = batch_size;
+      if impl is None:
+        impl = AlphaFoldIteration(num_ensemble, return_representations, c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins, recycle_features, max_relative_feature, template_enabled, extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel,
+                                  head_masked_msa_output_num, head_distogram_first_break, head_distogram_last_break, head_distogram_num_bins, head_distogram_weight, num_layer, update_affine, dist_epsilon, structure_module_num_channel, drop_rate, num_layer_in_transition, num_head, num_scalar_qk, num_scalar_v,
+                                  num_point_qk, num_point_v, sidechain_num_channel, sidchain_num_residual_block, position_scale, lddt_num_channel, lddt_num_bins, aligned_error_max_bin, aligned_error_num_bins);
+      if resample_msa_in_recycling:
+        def slice_recycle_idx(inputs):
+          start = recycle_idx * num_ensemble;
+          size = num_ensemble;
+          slice_idx = list();
+          for _input in inputs:
+            results = tf.keras.layers.Lambda(lambda x, st, sz: x[st:st+sz], arguments = {'st': start, 'sz': size})(_input);
+            slice_idx.append(results);
+        ensemble = slice_recycle_idx(inputs);
+      else:
+        ensemble = inputs;
+      outputs = impl(ensemble + [prev_pos, prev_msa_first_row, prev_pair]);
+      # update prev
+      prev_msa_first_row = outputs[0];
+      prev_pair = outputs[1];
+      prev_pos = outputs[5];
+      # TODO
 
 if __name__ == "__main__":
   import numpy as np;
