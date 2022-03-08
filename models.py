@@ -935,7 +935,7 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
     final_atom_positions, final_atom_mask, structure_module = structure_module_results;
   lddt_logits = PredictedLDDTHead(structure_module_num_channel, lddt_num_channel, lddt_num_bins)(structure_module); # logits.shape = (N_res, lddt_num_bins)
   aligned_error_logits, aligned_error_breaks = PredictedAlignedErrorHead(structure_module_num_channel, aligned_error_num_bins, aligned_error_max_bin)(structure_module);
-  return tf.keras.Model(inputs = inputs, outputs = [masked_msa, distogram_logits, distogram_breaks,] + structure_module_results + [lddt_logits, aligned_error_logits, aligned_error_breaks]);
+  return tf.keras.Model(inputs = inputs, outputs = [masked_msa, distogram_logits, distogram_breaks,] + list(structure_module_results) + [lddt_logits, aligned_error_logits, aligned_error_breaks]);
 
 if __name__ == "__main__":
   import numpy as np;
@@ -983,7 +983,6 @@ if __name__ == "__main__":
   print(pseudo_beta.shape);
   pseudo_beta, pseudo_beta_mask = pseudo_beta_fn(use_mask = True)([aatype, all_atom_positions, all_atom_masks]);
   print(pseudo_beta_mask.shape);
-  """
   msa_act = np.random.normal(size = (4, 20, 32));
   pair_act = np.random.normal(size = (20, 20, 64));
   msa_mask = np.random.normal(size = (4, 20));
@@ -996,7 +995,6 @@ if __name__ == "__main__":
   print(msa_act.shape, pair_act.shape);
   msa_act, pair_act = EvoformerIteration(32, 64, True, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
-  """
   target_feat = np.random.normal(size = (20, 22));
   msa_feat = np.random.normal(size = (4, 20, 25));
   msa_mask = np.random.normal(size = (4, 20));
