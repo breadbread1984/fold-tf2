@@ -999,15 +999,17 @@ if __name__ == "__main__":
   msa_mask = np.random.normal(size = (4, 20));
   seq_mask = np.random.normal(size = (20,));
   aatype = np.random.normal(size = (20,));
-  prev_pos = np.random.normal(size = (20, atom_type_num, 3));
-  prev_msa_first_row = np.random.normal(size = (20, 256));
-  prev_pair = np.random.normal(size = (20, 20, 128));
   residue_index = np.random.randint(low = 0, high = 10, size = (20,));
   extra_msa = np.random.randint(low = 0, high = 10, size = (4, 20));
   extra_msa_mask = np.random.normal(size = (4, 20));
   extra_has_deletion = np.random.normal(size = (4, 20));
   extra_deletion_value = np.random.normal(size = (4, 20));
-  single_activations, pair_activations, msa_activations, single_msa_activations = EmbeddingsAndEvoformer()([target_feat, msa_feat, msa_mask, seq_mask, aatype, prev_pos, prev_msa_first_row, prev_pair, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value]);
+  prev_pos = np.random.normal(size = (20, atom_type_num, 3));
+  prev_msa_first_row = np.random.normal(size = (20, 256));
+  prev_pair = np.random.normal(size = (20, 20, 128));
+  embeddings_and_evoformer = EmbeddingsAndEvoformer();
+  embeddings_and_evoformer.save('embedding.h5')
+  single_activations, pair_activations, msa_activations, single_msa_activations = embeddings_and_evoformer([target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, prev_pos, prev_msa_first_row, prev_pair]);
   print(single_activations.shape);
   print(pair_activations.shape);
   print(msa_activations.shape);
