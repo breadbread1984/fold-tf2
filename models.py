@@ -858,7 +858,7 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   return tf.keras.Model(inputs = inputs,
                         outputs = (single_activations, pair_activations, msa, single_msa_activations));
 
-def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
+def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
                        head_masked_msa_output_num = 23,
                        head_distogram_first_break = 2.3125, head_distogram_last_break = 21.6875, head_distogram_num_bins = 64, head_distogram_weight = 0.3,
                        num_layer = 8,
@@ -884,15 +884,14 @@ def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_re
   residx_atom37_to_atom14 = tf.keras.Input((None, atom_type_num), dtype = tf.int32, batch_size = num_ensemble); # residx_atom37_to_atom14.shape = (num_ensemble, N_res, 37)
   atom37_atom_exists = tf.keras.Input((None, atom_type_num), batch_size = num_ensemble); # atom37_atom_exists.shape = (num_ensemble, N_res, 37)
   # non ensembed batch
-  prev_pos = tf.keras.Input((atom_type_num, 3), batch_siz = num_ensemble); # prev_pos.shape = (N_res, atom_type_num, 3)
-  prev_msa_first_row = tf.keras.Input((msa_channel,), batch_siz = num_ensemble); # prev_msa_first_row.shape = (N_res, msa_channel)
-  prev_pair = tf.keras.Input((None, pair_channel), batch_siz = num_ensemble); # prev_pair.shape = (N_res, N_res, pair_channel)
+  prev_pos = tf.keras.Input((atom_type_num, 3), batch_size = num_ensemble); # prev_pos.shape = (N_res, atom_type_num, 3)
+  prev_msa_first_row = tf.keras.Input((msa_channel,), batch_size = num_ensemble); # prev_msa_first_row.shape = (N_res, msa_channel)
+  prev_pair = tf.keras.Input((None, pair_channel), batch_size = num_ensemble); # prev_pair.shape = (N_res, N_res, pair_channel)
 
   inputs = (target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, \
             atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists, prev_pos, prev_msa_first_row, prev_pair);
 
-  if ensemble_representations == False:
-    assert num_ensemble == 1;
+  assert type(num_ensemble) is int and num_ensemble >= 1;
   embeddings_and_evoformer = EmbeddingsAndEvoformer(c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins, recycle_features, max_relative_feature, template_enabled, extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel);
   # 1) iteration on ensemble batch
   # iteration 0
@@ -905,7 +904,7 @@ def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_re
   batch0_inputs = slice_batch([target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists], 0);
   single, pair, msa, msa_first_row = embeddings_and_evoformer(batch0_inputs[-3:] + [prev_pos, prev_msa_first_row, prev_pair]);
   representation_update = single, pair, msa, msa_first_row;
-  if ensemble_representations:
+  if num_ensemble > 1:
     # iteration 1 to num_ensemble
     for i in range(1, num_ensemble):
       representation_current = representation_update;
@@ -943,6 +942,7 @@ def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_re
 
 if __name__ == "__main__":
   import numpy as np;
+  """
   q_data = np.random.normal(size = (4, 20, 64));
   m_data = np.random.normal(size = (4, 10, 64));
   bias = np.random.normal(size = (4, 1, 1, 10));
@@ -1102,3 +1102,24 @@ if __name__ == "__main__":
   atom37_atom_exists = np.random.normal(size = (15,atom_type_num));
   final_atom_positions, final_atom_mask, structure_module = StructureModule()([seq_mask, single,pair,aatype, atom14_atom_exists,residx_atom37_to_atom14,atom37_atom_exists]);
   print(final_atom_positions.shape, final_atom_mask.shape, structure_module.shape);
+  """
+  target_feat = np.random.normal(size = (4, 15, 22));
+  msa_feat = np.random.normal(size = (4, 10, 15, 25));
+  msa_mask = np.random.normal(size = (4, 10, 15));
+  seq_mask = np.random.normal(size = (4, 15));
+  aatype = np.random.randint(0, 21, size = (15,));
+  reside_index = np.random.randint(0, 10, size = (4, 15));
+  extra_msa = np.random.randint(0, 10, size = (4, 10, 15));
+  extra_msa_mask = np.random.normal(size = (4, 10, 15));
+  extra_has_deletion = np.random.normal(size = (4, 10, 15));
+  extra_deletion_value = np.random.normal(size = (4, 10, 15));
+  atom14_atom_exists = np.random.normal(size = (4, 15,14));
+  residx_atom37_to_atom14 = np.random.randint(0, 14, size = (4,15, 37));
+  atom37_atom_exists = np.random.normal(size = (4,15,37));
+  prev_pos = np.random.normal(size = (15,37,3));
+  prev_msa_first_row = np.random.normal(size = (15, 256));
+  prev_pair = np.random.normal(size = (15,15,128));
+  results = AlphaFoldIteration(num_ensemble = 4)([target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
+                                  extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
+                                  atom37_atom_exists, prev_pos, prev_msa, prev_pair]);
+  print([result.shape for result in results]);
