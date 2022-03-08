@@ -934,8 +934,25 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
   else:
     final_atom_positions, final_atom_mask, structure_module = structure_module_results;
   lddt_logits = PredictedLDDTHead(structure_module_num_channel, lddt_num_channel, lddt_num_bins)(structure_module); # logits.shape = (N_res, lddt_num_bins)
-  aligned_error_logits, aligned_error_breaks = PredictedAlignedErrorHead(structure_module_num_channel, aligned_error_num_bins, aligned_error_max_bin)(structure_module);
+  aligned_error_logits, aligned_error_breaks = PredictedAlignedErrorHead(pair_channel, aligned_error_num_bins, aligned_error_max_bin)(pair);
   return tf.keras.Model(inputs = inputs, outputs = [masked_msa, distogram_logits, distogram_breaks,] + list(structure_module_results) + [lddt_logits, aligned_error_logits, aligned_error_breaks]);
+
+def AlphaFold(num_ensemble, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
+              head_masked_msa_output_num = 23,
+              head_distogram_first_break = 2.3125, head_distogram_last_break = 21.6875, head_distogram_num_bins = 64, head_distogram_weight = 0.3,
+              num_layer = 8,
+              update_affine = True,
+              dist_epsilon = 1e-8, structure_module_num_channel = 384, drop_rate = 0.1, num_layer_in_transition = 3,
+              num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8,
+              sidechain_num_channel = 128, sidechain_num_residual_block = 2, position_scale = 10.,
+              lddt_num_channel = 128, lddt_num_bins = 50,
+              aligned_error_max_bin = 31, aligned_error_num_bins = 64,
+              num_recycle = 3):
+  impl = AlphaFoldIteration(num_ensemble, return_representations, c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins, recycle_features, max_relative_feature, template_enabled, extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel,
+                            head_masked_msa_output_num, head_distogram_first_break, head_distogram_last_break, head_distogram_num_bins, head_distogram_weight, num_layer, update_affine, dist_epsilon, structure_module_num_channel, drop_rate, num_layer_in_transition, num_head, num_scalar_qk, num_scalar_v,
+                            num_point_qk, num_point_v, sidechain_num_channel, sidchain_num_residual_block, position_scale, lddt_num_channel, lddt_num_bins, aligned_error_max_bin, aligned_error_num_bins);
+  if num_recycle > 0:
+    pass
 
 if __name__ == "__main__":
   import numpy as np;
@@ -1119,6 +1136,6 @@ if __name__ == "__main__":
   prev_msa_first_row = np.random.normal(size = (15, 256));
   prev_pair = np.random.normal(size = (15,15,128));
   results = AlphaFoldIteration(num_ensemble = 4)([target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
-                                  extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
-                                  atom37_atom_exists, prev_pos, prev_msa, prev_pair]);
+                                                  extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
+                                                  atom37_atom_exists, prev_pos, prev_msa_first_row, prev_pair]);
   print([result.shape for result in results]);
