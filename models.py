@@ -863,9 +863,11 @@ def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_re
                        head_distogram_first_break = 2.3125, head_distogram_last_break = 21.6875, head_distogram_num_bins = 64, head_distogram_weight = 0.3,
                        num_layer = 8,
                        update_affine = True,
-                       dist_epsilon = 1e-8, num_channel = 384, drop_rate = 0.1, num_layer_in_transition = 3,
+                       dist_epsilon = 1e-8, structure_module_num_channel = 384, drop_rate = 0.1, num_layer_in_transition = 3,
                        num_head = 12, num_scalar_qk = 16, num_scalar_v = 16, num_point_qk = 4, num_point_v = 8,
-                       sidechain_num_channel = 128, sidechain_num_residual_block = 2, position_scale = 10.):
+                       sidechain_num_channel = 128, sidechain_num_residual_block = 2, position_scale = 10.,
+                       lddt_num_channel = 128, lddt_num_bins = 50,
+                       aligned_error_max_bin = 31, aligned_error_num_bins = 64):
   # ensembled batched
   target_feat = tf.keras.Input((None, c_m,), batch_size = num_ensemble); # target_feat.shape = (num_ensemble, N_res, c_m)
   msa_feat = tf.keras.Input((None, None, c_z), batch_size = num_ensemble); # msa_feat.shape = (num_ensemble, N_seq, N_res, c_z)
@@ -927,15 +929,17 @@ def AlphaFoldIteration(num_ensemble, ensemble_representations = False, return_re
   # 2) connect to heads
   masked_msa = MaskedMsaHead(msa_channel, head_masked_msa_output_num)(msa); # masked_msa.shape = (N_seq, N_seq, head_masked_msa_output_num);
   distogram_logits, distogram_breaks = DistogramHead(pair_channel, head_distogram_num_bins, head_distogram_first_break, head_distogram_last_break)(pair); # distogram_logits.shape = (N_res, N_res, head_distogram_num_bins)
-  results = StructureModule(seq_channel, num_layer, update_affine, dist_epsilon, pair_channel, num_channel, drop_rate, num_layer_in_transition,num_head, num_scalar_qk, \
+  structure_module_results = StructureModule(seq_channel, num_layer, update_affine, dist_epsilon, pair_channel, structure_module_num_channel, drop_rate, num_layer_in_transition,num_head, num_scalar_qk, \
     num_scalar_v, num_point_qk, num_point_v, sidechain_num_channel, sidechain_num_rsidual_block, position_scale)([
       seq_mask, single, pair, aatype, atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists
     ]);
   if tf.keras.backnd.learning_phase() == 1:
-    structure_module, traj, sidechain_position, sidechain_rotation, sidechain_translation, final_atom14_positions, final_atom14_mask, final_atom_positions, final_atom_mask, final_affine = results;
+    structure_module, traj, sidechain_position, sidechain_rotation, sidechain_translation, final_atom14_positions, final_atom14_mask, final_atom_positions, final_atom_mask, final_affine = structure_module_results;
   else:
-    final_atom_positions, final_atom_mask, structure_module = results;
-  
+    final_atom_positions, final_atom_mask, structure_module = structure_module_results;
+  lddt_logits = PredictedLDDTHead(structure_module_num_channel, lddt_num_channel, lddt_num_bins)(structure_module); # logits.shape = (N_res, lddt_num_bins)
+  aligned_error_logits, aligned_error_breaks = PredictedAlignedErrorHead(structure_module_num_channel, aligned_error_num_bins, aligned_error_max_bin)(structure_module);
+  return tf.keras.Model(inputs = inputs, outputs = [masked_msa, distogram_logits, distogram_breaks,] + structure_module_results + [lddt_logits, aligned_error_logits, aligned_error_breaks]);
 
 if __name__ == "__main__":
   import numpy as np;
