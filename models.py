@@ -1123,7 +1123,7 @@ if __name__ == "__main__":
   msa_feat = np.random.normal(size = (4, 10, 15, 25));
   msa_mask = np.random.normal(size = (4, 10, 15));
   seq_mask = np.random.normal(size = (4, 15));
-  aatype = np.random.randint(0, 21, size = (15,));
+  aatype = np.random.randint(0, 21, size = (4, 15,));
   reside_index = np.random.randint(0, 10, size = (4, 15));
   extra_msa = np.random.randint(0, 10, size = (4, 10, 15));
   extra_msa_mask = np.random.normal(size = (4, 10, 15));
