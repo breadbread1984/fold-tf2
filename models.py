@@ -987,6 +987,7 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
           for _input in inputs:
             results = tf.keras.layers.Lambda(lambda x, st, sz: x[st:st+sz], arguments = {'st': start, 'sz': size})(_input);
             slice_idx.append(results);
+          return slice_idx;
         ensemble = slice_recycle_idx(inputs);
       else:
         ensemble = inputs;
