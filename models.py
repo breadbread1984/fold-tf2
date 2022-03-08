@@ -83,7 +83,7 @@ def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, **kw
   assert value_dim % num_head == 0;
   q_data = tf.keras.Input((None, key_dim)); # q_data.shape = (batch, N_queries, q_channels)
   m_data = tf.keras.Input((None, value_dim)); # m_data.shape = (batch, N_keys, m_channels)
-  q_mask = tf.keras.Input((None, key_dim)); # q_mask.shape = (batch, N_queries, q_channels or 1)
+  q_mask = tf.keras.Input((None, None)); # q_mask.shape = (batch, N_queries, q_channels or 1)
   key_dim = key_dim // num_head;
   value_dim = value_dim // num_head;
   v = tf.keras.layers.Dense(value_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # v.shape = (batch, N_keys, value_dim)
@@ -988,15 +988,14 @@ if __name__ == "__main__":
   pair_act = np.random.normal(size = (20, 20, 64));
   msa_mask = np.random.normal(size = (4, 20));
   pair_mask = np.random.normal(size = (20, 20));
-#  msa_act, pair_act = EvoformerIteration(32, 64, False)([msa_act, pair_act, msa_mask, pair_mask]);
-#  print(msa_act.shape, pair_act.shape);
-#  msa_act, pair_act = EvoformerIteration(32, 64, False, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
-#  print(msa_act.shape, pair_act.shape);
+  msa_act, pair_act = EvoformerIteration(32, 64, False)([msa_act, pair_act, msa_mask, pair_mask]);
+  print(msa_act.shape, pair_act.shape);
+  msa_act, pair_act = EvoformerIteration(32, 64, False, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
+  print(msa_act.shape, pair_act.shape);
   msa_act, pair_act = EvoformerIteration(32, 64, True)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
   msa_act, pair_act = EvoformerIteration(32, 64, True, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
-
   """
   target_feat = np.random.normal(size = (20, 22));
   msa_feat = np.random.normal(size = (4, 20, 25));
