@@ -828,30 +828,25 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   if template_enabled:
     # TODO: will implement in the future
     pass;
+  # create_extra_msa_feature
   msa_1hot = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 23))(extra_msa); # msa_1hot.shape = (N_seq, N_res, 23)
   extra_msa_feat = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], tf.expand_dims(x[1], axis = -1), tf.expand_dims(x[2], axis = -1)], axis = -1))([msa_1hot, extra_has_deletion, extra_deletion_value]); # extra_msa_feat.shape = (N_seq, N_res, 25)
+  
   extra_msa_activations = tf.keras.layers.Dense(extra_msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(extra_msa_feat); # extra_msa_activations.shape = (N_seq, N_res, extra_msa_channel)
   # Embed extra MSA features
-  msa = extra_msa_activations;
-  pair = pair_activations;
   for i in range(extra_msa_stack_num_block):
-    # msa.shape = (N_seq, N_res, extra_msa_channel)
-    # pair.shape = (N_seq, N_res, pair_channel)
-    msa, pair = EvoformerIteration(extra_msa_channel, pair_channel, is_extra_msa = True)([msa, pair, extra_msa_mask, mask_2d]);
-  pair_activations = pair; # pair_activations.shape = (N_seq, N_res, pair_channel)
+    # extra_msa_activations.shape = (N_seq, N_res, extra_msa_channel)
+    # pair_activations.shape = (N_seq, N_res, pair_channel)
+    extra_msa_activations, pair_activations = EvoformerIteration(extra_msa_channel, pair_channel, is_extra_msa = True)([extra_msa_activations, pair_activations, extra_msa_mask, mask_2d]);
   if template_enabled:
     # TODO: will implement in the future
     pass;
   # Embed MSA features
-  msa_act = msa_activations;
-  pair_act = pair_activations;
   for i in range(evoformer_num_block):
-    # msa_act.shape = (N_seq, N_res, msa_channel)
-    # pair_act.shape = (N_seq, N_res, pair_channel)
-    msa_act, pair_act = EvoformerIteration(msa_channel, pair_channel, is_extra_msa = False)([msa_act, pair_act, msa_mask, mask_2d]);
-  msa_activations = msa; # msa_activations.shape = (N_seq, N_res, msa_channel)
-  pair_activations = pair; # pair_activations.shape = (N_seq, N_res, pair_channel)
-  
+    # msa_activations.shape = (N_seq, N_res, msa_channel)
+    # pair_activations.shape = (N_seq, N_res, pair_channel)
+    msa_activations, pair_activations = EvoformerIteration(msa_channel, pair_channel, is_extra_msa = False)([msa_activations, pair_activations, msa_mask, mask_2d]);
+
   single_msa_activations = tf.keras.layers.Lambda(lambda x: x[0])(msa_activations); # single_msa_activations.shape = (N_res, msa_channel)
   single_activations = tf.keras.layers.Dense(seq_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(single_msa_activations); # single_activations.shape = (N_res, seq_channel)
   msa = tf.keras.layers.Lambda(lambda x: x[0][:tf.shape(x[1])[0],:,:])([msa_activations, msa_feat]); # msa.shape = (N_seq, N_res, msa_channel)
@@ -998,7 +993,7 @@ if __name__ == "__main__":
   print(msa_act.shape, pair_act.shape);
   msa_act, pair_act = EvoformerIteration(32, 64, True, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
-  '''
+  """
   target_feat = np.random.normal(size = (20, 22));
   msa_feat = np.random.normal(size = (4, 20, 25));
   msa_mask = np.random.normal(size = (4, 20));
@@ -1016,7 +1011,7 @@ if __name__ == "__main__":
   print(single_activations.shape);
   print(pair_activations.shape);
   print(msa_activations.shape);
-  '''
+  """
   n_xyz = np.random.normal(size = (10,3));
   ca_xyz = np.random.normal(size = (10,3));
   c_xyz = np.random.normal(size = (10,3));
