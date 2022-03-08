@@ -902,14 +902,14 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
       outputs.append(output);
     return outputs;
   batch0_inputs = slice_batch([target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists], 0);
-  single, pair, msa, msa_first_row = embeddings_and_evoformer(batch0_inputs[-3:] + [prev_pos, prev_msa_first_row, prev_pair]);
+  single, pair, msa, msa_first_row = embeddings_and_evoformer(batch0_inputs[:-3] + [prev_pos, prev_msa_first_row, prev_pair]);
   representation_update = single, pair, msa, msa_first_row;
   if num_ensemble > 1:
     # iteration 1 to num_ensemble
     for i in range(1, num_ensemble):
       representation_current = representation_update;
       batchi_inputs = slice_batch([target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists], i);
-      representation = embeddings_and_evoformer(batchi_inputs[-3:] + [prev_pos, prev_msa_first_row, prev_pair]);
+      representation = embeddings_and_evoformer(batchi_inputs[:-3] + [prev_pos, prev_msa_first_row, prev_pair]);
       representation_update = list();
       for current, update in zip(representation_current, representation):
         rep = tf.keras.layers.Add()([current, update]);
