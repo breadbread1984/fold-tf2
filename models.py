@@ -926,10 +926,10 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
   masked_msa = MaskedMsaHead(msa_channel, head_masked_msa_output_num)(msa); # masked_msa.shape = (N_seq, N_seq, head_masked_msa_output_num);
   distogram_logits, distogram_breaks = DistogramHead(pair_channel, head_distogram_num_bins, head_distogram_first_break, head_distogram_last_break)(pair); # distogram_logits.shape = (N_res, N_res, head_distogram_num_bins)
   structure_module_results = StructureModule(seq_channel, num_layer, update_affine, dist_epsilon, pair_channel, structure_module_num_channel, drop_rate, num_layer_in_transition,num_head, num_scalar_qk, \
-    num_scalar_v, num_point_qk, num_point_v, sidechain_num_channel, sidechain_num_rsidual_block, position_scale)([
+    num_scalar_v, num_point_qk, num_point_v, sidechain_num_channel, sidechain_num_residual_block, position_scale)([
       seq_mask, single, pair, aatype, atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists
     ]);
-  if tf.keras.backnd.learning_phase() == 1:
+  if tf.keras.backend.learning_phase() == 1:
     structure_module, traj, sidechain_position, sidechain_rotation, sidechain_translation, final_atom14_positions, final_atom14_mask, final_atom_positions, final_atom_mask, final_affine = structure_module_results;
   else:
     final_atom_positions, final_atom_mask, structure_module = structure_module_results;
@@ -983,18 +983,20 @@ if __name__ == "__main__":
   print(pseudo_beta.shape);
   pseudo_beta, pseudo_beta_mask = pseudo_beta_fn(use_mask = True)([aatype, all_atom_positions, all_atom_masks]);
   print(pseudo_beta_mask.shape);
+  """
   msa_act = np.random.normal(size = (4, 20, 32));
   pair_act = np.random.normal(size = (20, 20, 64));
   msa_mask = np.random.normal(size = (4, 20));
   pair_mask = np.random.normal(size = (20, 20));
-  msa_act, pair_act = EvoformerIteration(32, 64, False)([msa_act, pair_act, msa_mask, pair_mask]);
-  print(msa_act.shape, pair_act.shape);
-  msa_act, pair_act = EvoformerIteration(32, 64, False, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
-  print(msa_act.shape, pair_act.shape);
+#  msa_act, pair_act = EvoformerIteration(32, 64, False)([msa_act, pair_act, msa_mask, pair_mask]);
+#  print(msa_act.shape, pair_act.shape);
+#  msa_act, pair_act = EvoformerIteration(32, 64, False, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
+#  print(msa_act.shape, pair_act.shape);
   msa_act, pair_act = EvoformerIteration(32, 64, True)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
   msa_act, pair_act = EvoformerIteration(32, 64, True, outer_first = True)([msa_act, pair_act, msa_mask, pair_mask]);
   print(msa_act.shape, pair_act.shape);
+
   """
   target_feat = np.random.normal(size = (20, 22));
   msa_feat = np.random.normal(size = (4, 20, 25));
@@ -1015,6 +1017,7 @@ if __name__ == "__main__":
   print(single_activations.shape);
   print(pair_activations.shape);
   print(msa_activations.shape);
+  """
   """
   n_xyz = np.random.normal(size = (10,3));
   ca_xyz = np.random.normal(size = (10,3));
