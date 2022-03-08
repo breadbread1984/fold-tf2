@@ -834,18 +834,20 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   
   extra_msa_activations = tf.keras.layers.Dense(extra_msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(extra_msa_feat); # extra_msa_activations.shape = (N_seq, N_res, extra_msa_channel)
   # Embed extra MSA features
+  extra_msa_stack_iteration = EvoformerIteration(extra_msa_channel, pair_channel, is_extra_msa = True);
   for i in range(extra_msa_stack_num_block):
     # extra_msa_activations.shape = (N_seq, N_res, extra_msa_channel)
     # pair_activations.shape = (N_seq, N_res, pair_channel)
-    extra_msa_activations, pair_activations = EvoformerIteration(extra_msa_channel, pair_channel, is_extra_msa = True)([extra_msa_activations, pair_activations, extra_msa_mask, mask_2d]);
+    extra_msa_activations, pair_activations = extra_msa_stack_iteration([extra_msa_activations, pair_activations, extra_msa_mask, mask_2d]);
   if template_enabled:
     # TODO: will implement in the future
     pass;
   # Embed MSA features
+  evoformer_iteration = EvoformerIteration(msa_channel, pair_channel, is_extra_msa = False)
   for i in range(evoformer_num_block):
     # msa_activations.shape = (N_seq, N_res, msa_channel)
     # pair_activations.shape = (N_seq, N_res, pair_channel)
-    msa_activations, pair_activations = EvoformerIteration(msa_channel, pair_channel, is_extra_msa = False)([msa_activations, pair_activations, msa_mask, mask_2d]);
+    msa_activations, pair_activations = evoformer_iteration([msa_activations, pair_activations, msa_mask, mask_2d]);
 
   single_msa_activations = tf.keras.layers.Lambda(lambda x: x[0])(msa_activations); # single_msa_activations.shape = (N_res, msa_channel)
   single_activations = tf.keras.layers.Dense(seq_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(single_msa_activations); # single_activations.shape = (N_res, seq_channel)
