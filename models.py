@@ -747,11 +747,11 @@ def pre_compose():
 def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39, use_template_unit_vector = False, value_dim = 64, num_head = 4, num_intermediate_channel = 64, num_block = 2, rate = 0.25):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
   mask_2d = tf.keras.Input((None,)); # mask_2d.shape = (N_res, N_res)
-  template_aatype = tf.keras.Input(()); # template_aatype.shape = (N_res,)
+  template_aatype = tf.keras.Input((), dtype = tf.int32); # template_aatype.shape = (N_res,)
   template_all_atom_positions = tf.keras.Input((atom_type_num, 3)); # template_all_atom_positions.shape = (N_res, atom_type_num, 3)
   template_all_atom_masks = tf.keras.Input((atom_type_num)); # template_all_atom_masks.shape = (N_res, atom_type_num)
   template_pseudo_beta_mask = tf.keras.Input(()); # template_pseudo_beta_mask.shape = (N_res)
-  template_pseudo_beta = tf.keras.Input((None,)); # template_seudo_beta.shape = (N_res, None)
+  template_pseudo_beta = tf.keras.Input((3,)); # template_seudo_beta.shape = (N_res, 3)
   inputs = (query_embedding, mask_2d, template_aatype, template_all_atom_positions, template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta);
 
   template_mask_2d = tf.keras.layers.Lambda(lambda x: tf.expand_dims(tf.cast(tf.expand_dims(x[0], axis = 1) * tf.expand_dims(x[0], axis = 0), dtype = x[1].dtype), axis = -1))([template_pseudo_beta_mask, query_embedding]); # template_mask_2d.shape = (N_res, N_res, 1)
@@ -763,9 +763,9 @@ def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39,
   aatype_tile1 = tf.keras.layers.Lambda(lambda x: tf.tile(tf.expand_dims(x[0], axis = 1), (1,tf.shape(x[1])[0],1)))([aatype, template_aatype]); # aatype_tile1.shape = (N_res, N_res, 22)
   to_concat.append(aatype_tile0);
   to_concat.append(aatype_tile1);
-  n_xyz = tf.keras.layers.Lambda(lambda x, n: x[:,n], arguments = {'n': residue_constants.atom_order['N']})(template_all_atom_positions); # n_xyz.shape = (N_res, 3)
-  ca_xyz = tf.keras.layers.Lambda(lambda x, n: x[:,n], arguments = {'n': residue_constants.atom_order['CA']})(template_all_atom_positions); # ca_xyz.shape = (N_res, 3)
-  c_xyz = tf.keras.layers.Lambda(lambda x, n: x[:,n], arguments = {'n': residue_constants.atom_order['C']})(template_all_atom_positions); # c_xyz.shape = (N_res, 3)
+  n_xyz = tf.keras.layers.Lambda(lambda x, n: x[:,n], arguments = {'n': atom_order['N']})(template_all_atom_positions); # n_xyz.shape = (N_res, 3)
+  ca_xyz = tf.keras.layers.Lambda(lambda x, n: x[:,n], arguments = {'n': atom_order['CA']})(template_all_atom_positions); # ca_xyz.shape = (N_res, 3)
+  c_xyz = tf.keras.layers.Lambda(lambda x, n: x[:,n], arguments = {'n': atom_order['C']})(template_all_atom_positions); # c_xyz.shape = (N_res, 3)
   translation, rot_matrix = make_canonical_transform()([n_xyz, ca_xyz, c_xyz]); # translation.shape = (N_res, 3) rot_matrix.shape = (N_res, 3, 3)
   # INFO: get inverse transformation (rotation, translation)
   trans = tf.keras.layers.Lambda(lambda x: -x)(translation); # trans.shape = (N_res, 3)
@@ -778,7 +778,7 @@ def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39,
   affine_vec = invert_point(extra_dims = 1)([rotation, translation, points]); # affine_vec.shape = (3, N_res, N_res)
   inv_distance_scalar = tf.keras.layers.Lambda(lambda x: tf.math.rsqrt(1e-6 + tf.math.reduce_sum(tf.math.square(x), axis = 0)))(affine_vec); # inv_distance_scalar.shape = (N_res, N_res)
   template_mask = tf.keras.layers.Lambda(lambda x, n, ca, c: x[..., n] * x[..., ca] * x[..., c], 
-                                         arguments = {'n': residue_constants.atom_order['N'], 'ca': residue_constants.atom_order['CA'], 'c': residue_constants.atom_order['C']})(template_all_atom_masks); # template_mask.shape = (N_res)
+                                         arguments = {'n': atom_order['N'], 'ca': atom_order['CA'], 'c': atom_order['C']})(template_all_atom_masks); # template_mask.shape = (N_res)
   template_mask_2d = tf.keras.layers.Lambda(lambda x: tf.cast(tf.expand_dims(x[0], axis = 1) * tf.expand_dims(x[0], axis = 0), dtype = x[1].dtype))([template_mask, query_embedding]); # template_mask_2d.shape = (N_res, N_res)
   inv_distance_scalar = tf.keras.layers.Lambda(lambda x: x[0] * tf.cast(x[1], dtype = x[0].dtype))([inv_distance_scalar, template_mask_2d]); # inv_distance_scalar.shape = (N_res, N_res)
   unit_vector = tf.keras.layers.Lambda(lambda x: tf.cast(tf.expand_dims(x[0] * tf.expand_dims(x[1], axis = 0), axis = -1), dtype = x[2].dtype))([affine_vec, inv_distance_scalar, query_embedding]); # unit_vector.shape = (3, N_res, N_res, 1)
@@ -1022,6 +1022,19 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
 
 if __name__ == "__main__":
   import numpy as np;
+  
+  query_embedding = np.random.normal(size = (4,4,128));
+  mask_2d = np.random.normal(size = (4,4));
+  template_aatype = np.random.randint(0,22,size = (4,));
+  template_all_atom_positions = np.random.normal(size = (4, 37,3));
+  template_all_atom_masks = np.random.normal(size = (4,37));
+  template_pseudo_beta_mask = np.random.normal(size = (4,));
+  template_pseudo_beta = np.random.normal(size = (4, 3));
+  act = SingleTemplateEmbedding(128)([query_embedding, mask_2d, template_aatype, template_all_atom_positions, template_all_atom_masks,
+                                      template_pseudo_beta_mask, template_pseudo_beta]);
+  print(act.shape);
+  
+  exit();
   target_feat = np.random.normal(size = (4, 15, 22));
   msa_feat = np.random.normal(size = (4, 10, 15, 25));
   msa_mask = np.random.normal(size = (4, 10, 15));
