@@ -827,7 +827,11 @@ def TemplateEmbedding(N_template, c_z, min_bin = 3.25, max_bin = 50.75, num_bins
   embedding = tf.keras.layers.Lambda(lambda x: x[0] * tf.cast(tf.math.greater(tf.math.reduce_sum(x[1]), 0.), dtype = x[0].dtype))([embedding, template_mask]); # embedding.shape = (N_res, N_res, c_z)
   return tf.keras.Model(inputs = inputs, outputs = embedding);
 
-def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, N_template = 4, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384):
+def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15,
+                           recycle_features = True, max_relative_feature = 32,
+                           template_enabled = False, N_template = 4, template_min_bin = 3.25, template_max_bin = 50.75, template_num_bins = 39, use_template_unit_vector = False,
+                           template_value_dim = 64, template_num_head = 4, num_intermediate_channel = 64, template_num_block = 2, template_rate = 0.25, template_attn_num_head = 4,
+                           extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384):
   target_feat = tf.keras.Input((c_m,)); # target_feat.shape = (N_res, c_m)
   msa_feat = tf.keras.Input((None, c_z)); # msa_feat.shape = (N_seq, N_res, c_z)
   msa_mask = tf.keras.Input((None,)); # msa_mask.shape = (N_seq, N_res)
@@ -873,7 +877,7 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   rel_pos = tf.keras.layers.Dense(pair_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(rel_pos); # rel_pos.shape = (N_res, N_res, pair_channel)
   pair_activations = tf.keras.layers.Add()([pair_activations, rel_pos]); # pair_activations.shape = (N_res, N_res, pair_channel)
   if template_enabled:
-    
+    template_pair_representation = TemplateEmbedding();
     # TODO: will implement in the future
     pass;
   # create_extra_msa_feature
