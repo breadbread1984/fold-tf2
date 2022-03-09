@@ -52,11 +52,11 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
     nonbatched_bias = tf.keras.Input((None, None), batch_size = num_head); # nonbatched_bias.shape = (num_head, N_queries, N_keys)
   key_dim = key_dim // num_head;
   value_dim = value_dim // num_head;
-  q = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(q_data); # q.shape = (batch, N_queries, num_head * key_dim);
+  q = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.glorot_uniform_initializer())(q_data); # q.shape = (batch, N_queries, num_head * key_dim);
   q = tf.keras.layers.Reshape((-1, num_head, key_dim))(q); # q.shape = (batch, N_queries, num_head, key_dim)
-  k = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # k.shape = (batch, N_keys, num_head * key_dim)
+  k = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.glorot_uniform_initializer())(m_data); # k.shape = (batch, N_keys, num_head * key_dim)
   k = tf.keras.layers.Reshape((-1, num_head, key_dim))(k); # k.shape = (batch, N_keys, num_head, key_dim)
-  v = tf.keras.layers.Dense(num_head * value_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # v.shape = (batch, N_keys, num_head * value_dim)
+  v = tf.keras.layers.Dense(num_head * value_dim, use_bias = False, kernel_initializer = tf.glorot_uniform_initializer())(m_data); # v.shape = (batch, N_keys, num_head * value_dim)
   v = tf.keras.layers.Reshape((-1, num_head, value_dim))(v); # v.shape = (batch, N_keys, num_head, value_dim)
   logits = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(tf.transpose(x[0], (0, 2, 1, 3)) / tf.math.sqrt(tf.cast(tf.shape(x[0])[-1], dtype = tf.float32)), tf.transpose(x[1], (0, 2, 1, 3)), transpose_b = True) + x[2])([q, k, bias]); # logits.shape = (batch, num_head, N_queries, N_keys)
   if use_nonbatched_bias:
@@ -86,12 +86,12 @@ def GlobalAttention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, **kw
   q_mask = tf.keras.Input((None, None)); # q_mask.shape = (batch, N_queries, q_channels or 1)
   key_dim = key_dim // num_head;
   value_dim = value_dim // num_head;
-  v = tf.keras.layers.Dense(value_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # v.shape = (batch, N_keys, value_dim)
+  v = tf.keras.layers.Dense(value_dim, use_bias = False, kernel_initializer = tf.glorot_uniform_initializer())(m_data); # v.shape = (batch, N_keys, value_dim)
   q_mask_broadcast = tf.keras.layers.Lambda(lambda x: tf.tile(x[0], tf.shape(x[1]) // tf.shape(x[0])))([q_mask, q_data]); # q_mask_broadcast.shape = (batch, N_queries, q_channels)
   q_avg = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(x[0] * x[1], axis = 1) / (tf.math.reduce_sum(x[1], axis = 1) + 1e-10))([q_data, q_mask_broadcast]); # q_avg.shape = (batch, q_channels)
-  q = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(q_avg); # q.shape = (batch, num_head * key_dim)
+  q = tf.keras.layers.Dense(num_head * key_dim, use_bias = False, kernel_initializer = tf.glorot_uniform_initializer())(q_avg); # q.shape = (batch, num_head * key_dim)
   q = tf.keras.layers.Reshape((num_head, key_dim))(q); # q.shape = (batch, num_head, key_dim)
-  k = tf.keras.layers.Dense(key_dim, use_bias = False, kernel_initializer = tf.keras.initializers.GlorotUniform())(m_data); # k.shape = (batch, N_keys, key_dim)
+  k = tf.keras.layers.Dense(key_dim, use_bias = False, kernel_initializer = tf.glorot_uniform_initializer())(m_data); # k.shape = (batch, N_keys, key_dim)
   bias = tf.keras.layers.Lambda(lambda x: tf.expand_dims(1e9 * (x - 1.), axis = 1)[:,:,:,0])(q_mask); # bias.shape = (batch, 1, N_queries)
   logits = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0] / tf.math.sqrt(tf.cast(tf.shape(x[0])[-1], dtype = tf.float32)), tf.transpose(x[1], (0, 2, 1))) + x[2])([q,k,bias]); # logits.shape = (batch, num_head, N_queries)
   weights = tf.keras.layers.Softmax()(logits); # weights.shape = (batch, num_head, N_keys)
@@ -290,7 +290,7 @@ def torsion_angles_to_frames():
   torsion_angles_sin_cos = tf.keras.Input((7, 2)); # torsion_angles_sin_cos.shape = (N_res, 7, 2)
   inputs = (aatype, backb_to_global_rotation, backb_to_global_translation, torsion_angles_sin_cos);
   # restype_rigid_group_default_frame.shape = (21,8,4,4)
-  m = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_rigid_group_default_frame})(aatype); # m.shape = (N_res, 8, 4, 4)
+  m = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, tf.cast(x, dtype = tf.int32)), arguments = {'p': restype_rigid_group_default_frame})(aatype); # m.shape = (N_res, 8, 4, 4)
   default_frame_rotation = tf.keras.layers.Lambda(lambda x: x[...,0:3,0:3])(m); # default_frame_rotation.shape = (N_res, 8, 3, 3)
   default_frame_translation = tf.keras.layers.Lambda(lambda x: x[...,0:3,3])(m); # default_frame_translation.shape = (N_res, 8, 3)
   sin_angles = tf.keras.layers.Lambda(lambda x: x[...,0])(torsion_angles_sin_cos); # sin_angles.shape = (N_res, 7)
