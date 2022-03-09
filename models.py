@@ -830,7 +830,7 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
     pass;
   # create_extra_msa_feature
   msa_1hot = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 23))(extra_msa); # msa_1hot.shape = (N_seq, N_res, 23)
-  extra_msa_feat = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], tf.expand_dims(x[1], axis = -1), tf.expand_dims(x[2], axis = -1)], axis = -1))([msa_1hot, extra_has_deletion, extra_deletion_value]); # extra_msa_feat.shape = (N_seq, N_res, 25)
+  extra_msa_feat = tf.keras.layers.Lambda(lambda x: tf.concat([tf.cast(x[0], dtype = tf.float32), tf.cast(tf.expand_dims(x[1], axis = -1), dtype = tf.float32), tf.cast(tf.expand_dims(x[2], axis = -1), dtype = tf.float32)], axis = -1))([msa_1hot, extra_has_deletion, extra_deletion_value]); # extra_msa_feat.shape = (N_seq, N_res, 25)
   
   extra_msa_activations = tf.keras.layers.Dense(extra_msa_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(extra_msa_feat); # extra_msa_activations.shape = (N_seq, N_res, extra_msa_channel)
   # Embed extra MSA features
