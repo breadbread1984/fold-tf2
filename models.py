@@ -1030,7 +1030,9 @@ if __name__ == "__main__":
                                                   atom37_atom_exists, prev_pos, prev_msa_first_row, prev_pair]);
   print([result.shape for result in results]);
   '''
-  alphafold = AlphaFold(batch_size = 4);
+  with tf.device('/device:XLA_DTU:0'):
+    alphafold = AlphaFold(batch_size = 4);
+  alphafold.summary();
   alphafold.save('alphafold.h5');
   results = alphafold([target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
                                        extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
