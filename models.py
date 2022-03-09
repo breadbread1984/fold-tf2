@@ -332,15 +332,15 @@ def frames_and_literature_positions_to_atom14_pos():
   all_frames_to_global_translation = tf.keras.Input((8,3)); # all_frames_to_global_translation.shape = (N_res, 8, 3)
   inputs = (aatype, all_frames_to_global_rotation, all_frames_to_global_translation);
   # restype_atom14_to_rigid_group.shape = (21,14)
-  residx_to_group_idx = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_atom14_to_rigid_group})(aatype); # residx_to_group_idx.shape = (N_res, 14)
+  residx_to_group_idx = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, tf.cast(x, dtype = tf.int32)), arguments = {'p': restype_atom14_to_rigid_group})(aatype); # residx_to_group_idx.shape = (N_res, 14)
   group_mask = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 8))(residx_to_group_idx); # group_mask.shape = (N_res, 14, 8)
   map_atoms_to_global_rotation = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.expand_dims(x[0], axis = 1) * tf.reshape(x[1], (-1,14,8,1,1)), axis = 2))([all_frames_to_global_rotation, group_mask]); # map_atoms_to_global_rotation.shape = (N_res, 14, 3, 3)
   map_atoms_to_global_translation = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.expand_dims(x[0], axis = 1) * tf.reshape(x[1], (-1,14,8,1)), axis = 2))([all_frames_to_global_translation, group_mask]); # map_atoms_to_global_translation.shape = (N_res, 14, 3)
   # restype_atom14_rigid_group_positions.shape = (21,14,3)
-  lit_positions = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_atom14_rigid_group_positions})(aatype); # x.shape = (N_res, 14, 3)
+  lit_positions = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, tf.cast(x, dtype = tf.int32)), arguments = {'p': restype_atom14_rigid_group_positions})(aatype); # x.shape = (N_res, 14, 3)
   pred_positions = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1) + x[1])([map_atoms_to_global_rotation, map_atoms_to_global_translation, lit_positions]); # pred_positions.shape = (N_res, 14, 3)
   # restype_atom14_mask.shape = (21, 14)
-  mask = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_atom14_mask})(aatype); # mask.shape = (N_res, 14)
+  mask = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, tf.cast(x, dtype = tf.int32)), arguments = {'p': restype_atom14_mask})(aatype); # mask.shape = (N_res, 14)
   pred_positions = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0], axis = -1) * x[1])([mask, pred_positions]); # pred_positions.shape = (N_res, 14, 3)
   return tf.keras.Model(inputs = inputs, outputs = pred_positions);
 
@@ -459,7 +459,7 @@ def StructureModule(seq_channel = 384, num_layer = 8,
   final_atom14_positions = tf.keras.layers.Lambda(lambda x: x[-1])(position); # atom14_pred_positions.shape = (N_res, 14, 3)
   final_atom14_mask = atom14_atom_exists; # final_atom14_mask.shape = (N_res, 14)
   # atom14_to_atom37
-  atom37_pred_positions = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], x[1], batch_dims = 1))([final_atom14_positions, residx_atom37_to_atom14]); # atom37_pred_positions.shape = (N_res, atom_type_num, 3)
+  atom37_pred_positions = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], tf.cast(x[1], dtype = tf.int32), batch_dims = 1))([final_atom14_positions, residx_atom37_to_atom14]); # atom37_pred_positions.shape = (N_res, atom_type_num, 3)
   atom37_pred_positions = tf.keras.layers.Lambda(lambda x: x[0] * tf.expand_dims(x[1], axis = -1))([atom37_pred_positions, atom37_atom_exists]); # atom37_pred_positions.shape = (N_res, atom_type_num, 3)
   final_atom_positions = atom37_pred_positions;
   final_atom_mask = atom37_atom_exists;
