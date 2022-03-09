@@ -44,7 +44,6 @@ def Attention(output_dim, key_dim = 64, num_head = 4, value_dim = 64, use_nonbat
   # 2) output gets through an output gate controlled by query.
   assert key_dim % num_head == 0;
   assert value_dim % num_head == 0;
-  assert key_dim == value_dim;
   q_data = tf.keras.Input((None, key_dim)); # q_data.shape = (batch, N_queries, q_channels)
   m_data = tf.keras.Input((None, value_dim)); # m_data.shape = (batch, N_keys, m_channels)
   bias = tf.keras.Input((None, None, None)); # bias.shape = (batch, num_head or 1, N_queries or 1, N_keys)
@@ -816,15 +815,15 @@ def TemplateEmbedding(N_template, c_z, min_bin = 3.25, max_bin = 50.75, num_bins
   acts = list();
   for i in range(N_template):
     template = slice_batch([template_aatype, template_all_atom_positions, template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta],i);
-    inputs = [query_embedding, mask_2d] + template;
-    act = tmplate_embedder(inputs); # act.shape = (N_res, N_res, value_dim)
+    data = [query_embedding, mask_2d] + template;
+    act = template_embedder(data); # act.shape = (N_res, N_res, value_dim)
     acts.append(act);
   template_pair_representation = tf.keras.layers.Lambda(lambda x: tf.stack(x))(acts); # template_pair_representation.shape = (N_template, N_res, N_res, value_dim)
   flat_query = tf.keras.layers.Lambda(lambda x, d: tf.reshape(x, (-1, 1, d)), arguments = {'d': c_z})(query_embedding); # flat_query.shape = (N_res * N_res, 1, c_z)
   flat_templates = tf.keras.layers.Lambda(lambda x, t, d: tf.reshape(tf.transpose(x, (1,2,0,3)), (-1, t, d)), arguments = {'t': N_template, 'd': value_dim})(template_pair_representation); # flat_template.shape = (N_res * N_res, N_template, value_dim)
   bias = tf.keras.layers.Lambda(lambda x: 1e9 * (tf.reshape(x, (1,1,1,-1)) - 1.))(template_mask); # bias.shape = (1,1,1,N_template)
   embedding = Attention(c_z, key_dim = c_z, num_head = attn_num_head, value_dim = value_dim, use_nonbatched_bias = False)([flat_query, flat_templates, bias]); # embedding.shape = (N_res * N_res, 1, c_z)
-  embedding = tf.keras.layers.Lambda(lambda x, d: tf.reshape(x, (tf.cast(tf.math.sqrt(tf.shape(x)[0]), dtype = tf.int32),tf.cast(tf.math.sqrt(tf.shape(x)[0]), dtype = tf.int32), d)), arguments = {'d': c_z})(embedding); # embedding.shape = (N_res, N_res, c_z)
+  embedding = tf.keras.layers.Lambda(lambda x: tf.reshape(x[0], tf.shape(x[1])))([embedding, query_embedding]); # embedding.shape = (N_res, N_res, c_z)
   embedding = tf.keras.layers.Lambda(lambda x: x[0] * tf.cast(tf.math.greater(tf.math.reduce_sum(x[1]), 0.), dtype = x[0].dtype))([embedding, template_mask]); # embedding.shape = (N_res, N_res, c_z)
   return tf.keras.Model(inputs = inputs, outputs = embedding);
 
@@ -1051,14 +1050,15 @@ if __name__ == "__main__":
   
   query_embedding = np.random.normal(size = (4,4,128));
   mask_2d = np.random.normal(size = (4,4));
-  template_aatype = np.random.randint(0,22,size = (4,));
-  template_all_atom_positions = np.random.normal(size = (4, 37,3));
-  template_all_atom_masks = np.random.normal(size = (4,37));
-  template_pseudo_beta_mask = np.random.normal(size = (4,));
-  template_pseudo_beta = np.random.normal(size = (4, 3));
-  act = SingleTemplateEmbedding(128)([query_embedding, mask_2d, template_aatype, template_all_atom_positions, template_all_atom_masks,
-                                      template_pseudo_beta_mask, template_pseudo_beta]);
-  print(act.shape);
+  template_aatype = np.random.randint(0,22,size = (4, 4,));
+  template_all_atom_positions = np.random.normal(size = (4,4, 37,3));
+  template_all_atom_masks = np.random.normal(size = (4,4,37));
+  template_pseudo_beta_mask = np.random.normal(size = (4,4,));
+  template_pseudo_beta = np.random.normal(size = (4, 4, 3));
+  template_mask = np.random.normal(size = (4,));
+  embedding = TemplateEmbedding(4,128)([query_embedding, mask_2d, template_aatype, template_all_atom_positions, template_all_atom_masks,
+                                  template_pseudo_beta_mask, template_pseudo_beta, template_mask]);
+  print(embedding.shape);
   
   exit();
   target_feat = np.random.normal(size = (4, 15, 22));
