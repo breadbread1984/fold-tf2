@@ -794,7 +794,7 @@ def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39,
   act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_res, N_res, value_dim)
   return tf.keras.Model(inputs = inputs, outputs = act);
 
-def TemplateEmbedding(N_template, c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39, use_template_unit_vector = False, value_dim = 64, num_head = 4, num_intermediate_channel = 64, num_block = 2, rate = 0.25):
+def TemplateEmbedding(N_template, c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39, use_template_unit_vector = False, value_dim = 64, num_head = 4, num_intermediate_channel = 64, num_block = 2, rate = 0.25, attn_num_head = 4):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
   mask_2d = tf.keras.Input((None,)); # mask_2d.shape = (N_res, N_res)
   template_aatype = tf.keras.Input((None,), batch_size = N_template); # template_aatype.shape = (N_template, N_res)
@@ -813,8 +813,20 @@ def TemplateEmbedding(N_template, c_z, min_bin = 3.25, max_bin = 50.75, num_bins
       output = tf.keras.layers.Lambda(lambda x, i: x[i], arguments = {'i': n})(_input);
       outputs.append(output);
     return outputs;
-  for i in
-  # TODO
+  acts = list();
+  for i in range(N_template):
+    template = slice_batch([template_aatype, template_all_atom_positions, template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta],i);
+    inputs = [query_embedding, mask_2d] + template;
+    act = tmplate_embedder(inputs); # act.shape = (N_res, N_res, value_dim)
+    acts.append(act);
+  template_pair_representation = tf.keras.layers.Lambda(lambda x: tf.stack(x))(acts); # template_pair_representation.shape = (N_template, N_res, N_res, value_dim)
+  flat_query = tf.keras.layers.Lambda(lambda x, d: tf.reshape(x, (-1, 1, d)), arguments = {'d': c_z})(query_embedding); # flat_query.shape = (N_res * N_res, 1, c_z)
+  flat_templates = tf.keras.layers.Lambda(lambda x, t, d: tf.reshape(tf.transpose(x, (1,2,0,3)), (-1, t, d)), arguments = {'t': N_template, 'd': value_dim})(template_pair_representation); # flat_template.shape = (N_res * N_res, N_template, value_dim)
+  bias = tf.keras.layers.Lambda(lambda x: 1e9 * (tf.reshape(x, (1,1,1,-1)) - 1.))(template_mask); # bias.shape = (1,1,1,N_template)
+  embedding = Attention(c_z, key_dim = c_z, num_head = attn_num_head, value_dim = value_dim, use_nonbatched_bias = False)([flat_query, flat_templates, bias]); # embedding.shape = (N_res * N_res, 1, c_z)
+  embedding = tf.keras.layers.Lambda(lambda x, d: tf.reshape(x, (tf.cast(tf.math.sqrt(tf.shape(x)[0]), dtype = tf.int32),tf.cast(tf.math.sqrt(tf.shape(x)[0]), dtype = tf.int32), d)), arguments = {'d': c_z})(embedding); # embedding.shape = (N_res, N_res, c_z)
+  embedding = tf.keras.layers.Lambda(lambda x: x[0] * tf.cast(tf.math.greater(tf.math.reduce_sum(x[1]), 0.), dtype = x[0].dtype))([embedding, template_mask]); # embedding.shape = (N_res, N_res, c_z)
+  return tf.keras.Model(inputs = inputs, outputs = embedding);
 
 def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384):
   target_feat = tf.keras.Input((c_m,)); # target_feat.shape = (N_res, c_m)
