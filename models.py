@@ -1008,22 +1008,22 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
 
 if __name__ == "__main__":
   import numpy as np;
-  target_feat = np.random.normal(size = (4, 15, 22));
-  msa_feat = np.random.normal(size = (4, 10, 15, 25));
-  msa_mask = np.random.normal(size = (4, 10, 15));
-  seq_mask = np.random.normal(size = (4, 15));
-  aatype = np.random.randint(0, 21, size = (4, 15,));
-  reside_index = np.random.randint(0, 10, size = (4, 15));
-  extra_msa = np.random.randint(0, 10, size = (4, 10, 15));
-  extra_msa_mask = np.random.normal(size = (4, 10, 15));
-  extra_has_deletion = np.random.normal(size = (4, 10, 15));
-  extra_deletion_value = np.random.normal(size = (4, 10, 15));
-  atom14_atom_exists = np.random.normal(size = (4, 15,14));
-  residx_atom37_to_atom14 = np.random.randint(0, 14, size = (4,15, 37));
-  atom37_atom_exists = np.random.normal(size = (4,15,37));
-  prev_pos = np.random.normal(size = (15,37,3));
-  prev_msa_first_row = np.random.normal(size = (15, 256));
-  prev_pair = np.random.normal(size = (15,15,128));
+  target_feat = np.random.normal(size = (4, 15, 22)).astype(np.float32);
+  msa_feat = np.random.normal(size = (4, 10, 15, 25)).astype(np.float32);
+  msa_mask = np.random.normal(size = (4, 10, 15)).astype(np.float32);
+  seq_mask = np.random.normal(size = (4, 15)).astype(np.float32);
+  aatype = np.random.randint(0, 21, size = (4, 15,)).astype(np.int32);
+  reside_index = np.random.randint(0, 10, size = (4, 15)).astype(np.int32);
+  extra_msa = np.random.randint(0, 10, size = (4, 10, 15)).astype(np.int32);
+  extra_msa_mask = np.random.normal(size = (4, 10, 15)).astype(np.float32);
+  extra_has_deletion = np.random.normal(size = (4, 10, 15)).astype(np.float32);
+  extra_deletion_value = np.random.normal(size = (4, 10, 15)).astype(np.float32);
+  atom14_atom_exists = np.random.normal(size = (4, 15,14)).astype(np.float32);
+  residx_atom37_to_atom14 = np.random.randint(0, 14, size = (4,15, 37)).astype(np.float32);
+  atom37_atom_exists = np.random.normal(size = (4,15,37)).astype(np.float32);
+  prev_pos = np.random.normal(size = (15,37,3)).astype(np.float32);
+  prev_msa_first_row = np.random.normal(size = (15, 256)).astype(np.float32);
+  prev_pair = np.random.normal(size = (15,15,128)).astype(np.float32);
   '''
   results = AlphaFoldIteration(num_ensemble = 4)([target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
                                                   extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
