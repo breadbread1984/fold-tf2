@@ -325,6 +325,24 @@ def torsion_angles_to_frames():
   all_frames_to_global_translation = tf.keras.layers.Lambda(lambda x: x[1] + tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1))([backb_to_global_rotation, backb_to_global_translation, all_frames_to_backb_translation]); # # all_frames_to_global_translation.shape = (N_res,8,3)
   return tf.keras.Model(inputs = inputs, outputs = (all_frames_to_global_rotation, all_frames_to_global_translation));
 
+def atom37_to_torsion_angles(placeholder_for_undefined = False):
+  aatype = tf.keras.Input((None,)); # aatype.shape = (N_template, N_res)
+  all_atom_pos = tf.keras.Input((None, atom_type_num, 3)); # all_atom_pos.shape = (N_template, N_res, atom_type_num, 3)
+  all_atom_mask = tf.keras.Input((None, atom_type_num)); # all_atom_mask.shape = (N_template, N_res, atom_type_num)
+  inputs = (aatype, all_atom_pos, all_atom_mask);
+  
+  aatype = tf.keras.layers.Lambda(lambda x: tf.math.minimum(x, 20))(aatype); # aatype.shape = (N_template, N_res)
+  pad = tf.keras.layers.Lambda(lambda x, n: tf.zeros(tf.shape(x)[0], 1, n, 3), arguments = {'n': atom_type_num})(aatype); # pad.shape = (N_template, 1, atom_type_num, 3)
+  prev_all_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], x[1][:,:-1,:,:]], axis = 1))([pad, all_atom_pos]); # prev_all_atom_pos.shape = (N_template, N_res, atom_type_num, 3)
+  pad = tf.keras.layers.Lambda(lambda x, n: tf.zeros(tf.shape(x)[0], 1, n), arguments = {'n': atom_type_num})(aatype); # pad.shape = (N_template, 1, atom_type_num)
+  prev_all_atom_mask = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], x[1][:,:-1,:]], axis = 1))([pad, all_atom_mask]); # prev_all_atom_mask.shape = (N_template, N_res, atom_type_num)
+  pre_omega_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([x[0][:,:,1:3,:], x[1][:,:,0:2,:]], axis = -2))([prev_all_atom_pos, all_atom_pos]); # pre_omega_atom_pos.shape = (N_template, N_res, 4, 3)
+  phi_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([x[0][:,:,2:3,:], x[1][:,:,0:3,:]], axis = -2))([prev_all_atom_pos, all_atom_pos]); # phi_atom_pos.shape = (N_template, N_res, 4, 3)
+  psi_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([x[0][:,:,0:3,:], x[1][:,:,4:5,:]], axis = -2))([all_atom_pos, all_atom_pos]); # all_atom_pos.shape = (N_template, N_res, 4, 3)
+  pre_omega_mask = tf.keras.layers.Lambda(lambda x: tf.math.reduce_prod(x[0][:,:,1:3], axis = -1) * tf.math.reduce_prod(x[1][:,:,0:2], axis = -1))([prev_all_atom_mask, all_atom_mask]); # pre_omega_mask.shape = (N_template, N_res)
+  phi_mask = tf.keras.layers.Lambda(lambda x: x[0][:,:,2] * tf.math.reduce_prod(x[1][:,:,0:3], axis = -1))([prev_all_atom_mask, all_atom_mask]); # phi_mask.shape = (N_template, N_res)
+  psi_mask = tf.keras.layers.Lambda(lambda x: )
+
 def frames_and_literature_positions_to_atom14_pos():
   aatype = tf.keras.Input((), dtype = tf.int32); # aatype.shape = (N_res)
   all_frames_to_global_rotation = tf.keras.Input((8,3,3)); # all_frames_to_global_rotation.shape = (N_res, 8, 3, 3)
@@ -877,9 +895,13 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   rel_pos = tf.keras.layers.Dense(pair_channel, kernel_initializer = tf.keras.initializers.VarianceScaling(mode = 'fan_in', distribution = 'truncated_normal'), bias_initializer = tf.keras.initializers.Constant(0.))(rel_pos); # rel_pos.shape = (N_res, N_res, pair_channel)
   pair_activations = tf.keras.layers.Add()([pair_activations, rel_pos]); # pair_activations.shape = (N_res, N_res, pair_channel)
   if template_enabled:
-    template_pair_representation = TemplateEmbedding();
-    # TODO: will implement in the future
-    pass;
+    template_pair_representation = TemplateEmbedding(N_template, pair_channel, template_min_bin, template_max_bin, template_num_bins,
+                                                     use_template_unit_vector, template_value_dim, template_num_head,
+                                                     num_intermediate_channel, template_num_block, template_rate, template_attn_num_head)([
+                                                       pair_activations, mask_2d, template_aatype, template_all_atom_positions,
+                                                       template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta,
+                                                       template_mask]); # template_pair_representation.shape = (N_res, N_res, pair_channel)
+    pair_activations = tf.keras.layers.Add()([pair_activations, template_pair_representation]);
   # create_extra_msa_feature
   msa_1hot = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 23))(extra_msa); # msa_1hot.shape = (N_seq, N_res, 23)
   extra_msa_feat = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], tf.expand_dims(x[1], axis = -1), tf.expand_dims(x[2], axis = -1)], axis = -1))([msa_1hot, extra_has_deletion, extra_deletion_value]); # extra_msa_feat.shape = (N_seq, N_res, 25)
@@ -892,6 +914,8 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
     # pair_activations.shape = (N_seq, N_res, pair_channel)
     extra_msa_activations, pair_activations = extra_msa_stack_iteration([extra_msa_activations, pair_activations, extra_msa_mask, mask_2d]);
   if template_enabled:
+    aatype_one_hot = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 22, axis = -1))(template_aatype); # aatype_one_hot.shape = (N_template, N_res, 22)
+    
     # TODO: will implement in the future
     pass;
   # Embed MSA features
@@ -1060,20 +1084,6 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
 
 if __name__ == "__main__":
   import numpy as np;
-  
-  query_embedding = np.random.normal(size = (4,4,128));
-  mask_2d = np.random.normal(size = (4,4));
-  template_aatype = np.random.randint(0,22,size = (4, 4,));
-  template_all_atom_positions = np.random.normal(size = (4,4, 37,3));
-  template_all_atom_masks = np.random.normal(size = (4,4,37));
-  template_pseudo_beta_mask = np.random.normal(size = (4,4,));
-  template_pseudo_beta = np.random.normal(size = (4, 4, 3));
-  template_mask = np.random.normal(size = (4,));
-  embedding = TemplateEmbedding(4,128)([query_embedding, mask_2d, template_aatype, template_all_atom_positions, template_all_atom_masks,
-                                  template_pseudo_beta_mask, template_pseudo_beta, template_mask]);
-  print(embedding.shape);
-  
-  exit();
   target_feat = np.random.normal(size = (4, 15, 22));
   msa_feat = np.random.normal(size = (4, 10, 15, 25));
   msa_mask = np.random.normal(size = (4, 10, 15));
