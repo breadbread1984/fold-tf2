@@ -794,12 +794,26 @@ def SingleTemplateEmbedding(c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39,
   act = tf.keras.layers.LayerNormalization()(act); # act.shape = (N_res, N_res, value_dim)
   return tf.keras.Model(inputs = inputs, outputs = act);
 
-def TemplateEmbedding(c_z):
+def TemplateEmbedding(N_template, c_z, min_bin = 3.25, max_bin = 50.75, num_bins = 39, use_template_unit_vector = False, value_dim = 64, num_head = 4, num_intermediate_channel = 64, num_block = 2, rate = 0.25):
   query_embedding = tf.keras.Input((None, c_z)); # query_embedding.shape = (N_res, N_res, c_z)
-  template_mask = tf.keras.Input(()); # template_mask.shape = (N_template)
   mask_2d = tf.keras.Input((None,)); # mask_2d.shape = (N_res, N_res)
-  inputs = (query_embedding, template_mask, mask_2d)
+  template_aatype = tf.keras.Input((None,), batch_size = N_template); # template_aatype.shape = (N_template, N_res)
+  template_all_atom_positions = tf.keras.Input((None, atom_type_num, 3), batch_size = N_template); # template_all_atom_positions.shap = (N_template, N_res, atom_type_num, 3)
+  template_all_atom_masks = tf.keras.Input((None, atom_type_num), batch_size = N_template); # template_all_atom_masks.shape = (N_template, N_res, atom_type_num)
+  template_pseudo_beta_mask = tf.keras.Input((None,), batch_size = N_template); # template_pseudo_beta_mask.shape = (N_template, N_res)
+  template_pseudo_beta = tf.keras.Input((None, 3), batch_size = N_template); # template_pseudo_beta.shap = (N_template, N_res, 3)
+  template_mask = tf.keras.Input((), batch_size = N_template); # template_mask.shape = (N_template)
+  inputs = (query_embedding, mask_2d, template_aatype, template_all_atom_positions, template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta, template_mask);
+  
   template_mask = tf.keras.layers.Lambda(lambda x: tf.cast(x[0], dtype = x[1].dtype))([template_mask, query_embedding]); # template_mask.shape = (N_template)
+  template_embedder = SingleTemplateEmbedding(c_z, min_bin, max_bin, num_bins, use_template_unit_vector, value_dim, num_head, num_intermediate_channel, num_block, rate);
+  def slice_batch(inputs, n):
+    outputs = list();
+    for _input in inputs:
+      output = tf.keras.layers.Lambda(lambda x, i: x[i], arguments = {'i': n})(_input);
+      outputs.append(output);
+    return outputs;
+  for i in
   # TODO
 
 def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384):
