@@ -343,15 +343,15 @@ def rigids_from_3_points():
   return tf.keras.Model(inputs = (point_on_neg_x_axis, origin, point_on_xy_plane), outputs = (rotation, origin));
 
 def atom37_to_torsion_angles(placeholder_for_undefined = False):
-  aatype = tf.keras.Input((None,)); # aatype.shape = (N_template, N_res)
+  aatype = tf.keras.Input((None,), dtype = tf.int32); # aatype.shape = (N_template, N_res)
   all_atom_pos = tf.keras.Input((None, atom_type_num, 3)); # all_atom_pos.shape = (N_template, N_res, atom_type_num, 3)
   all_atom_mask = tf.keras.Input((None, atom_type_num)); # all_atom_mask.shape = (N_template, N_res, atom_type_num)
   inputs = (aatype, all_atom_pos, all_atom_mask);
   
   aatype = tf.keras.layers.Lambda(lambda x: tf.math.minimum(x, 20))(aatype); # aatype.shape = (N_template, N_res)
-  pad = tf.keras.layers.Lambda(lambda x, n: tf.zeros(tf.shape(x)[0], 1, n, 3), arguments = {'n': atom_type_num})(aatype); # pad.shape = (N_template, 1, atom_type_num, 3)
+  pad = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[0], 1, n, 3)), arguments = {'n': atom_type_num})(aatype); # pad.shape = (N_template, 1, atom_type_num, 3)
   prev_all_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], x[1][:,:-1,:,:]], axis = 1))([pad, all_atom_pos]); # prev_all_atom_pos.shape = (N_template, N_res, atom_type_num, 3)
-  pad = tf.keras.layers.Lambda(lambda x, n: tf.zeros(tf.shape(x)[0], 1, n), arguments = {'n': atom_type_num})(aatype); # pad.shape = (N_template, 1, atom_type_num)
+  pad = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[0], 1, n)), arguments = {'n': atom_type_num})(aatype); # pad.shape = (N_template, 1, atom_type_num)
   prev_all_atom_mask = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], x[1][:,:-1,:]], axis = 1))([pad, all_atom_mask]); # prev_all_atom_mask.shape = (N_template, N_res, atom_type_num)
   pre_omega_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([x[0][:,:,1:3,:], x[1][:,:,0:2,:]], axis = -2))([prev_all_atom_pos, all_atom_pos]); # pre_omega_atom_pos.shape = (N_template, N_res, 4, 3)
   phi_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([x[0][:,:,2:3,:], x[1][:,:,0:3,:]], axis = -2))([prev_all_atom_pos, all_atom_pos]); # phi_atom_pos.shape = (N_template, N_res, 4, 3)
@@ -366,7 +366,7 @@ def atom37_to_torsion_angles(placeholder_for_undefined = False):
       residue_chi_angles = chi_angles_atoms[residue_name];
       atom_indices = [];
       for chi_angle in residue_chi_angles:
-        atom_indices.append([atom_order[atom] for atom in chi_angles]);
+        atom_indices.append([atom_order[atom] for atom in chi_angle]);
       for _ in range(4 - len(atom_indices)):
         atom_indices.append([0,0,0,0]);
       chi_atom_indices.append(atom_indices);
@@ -381,7 +381,7 @@ def atom37_to_torsion_angles(placeholder_for_undefined = False):
   chis_mask = tf.keras.layers.Lambda(lambda x: x[0] * tf.cast(x[1], dtype = tf.float32))([chis_mask, chi_angle_atoms_mask]); # chis_mask.shape = (N_template, N_res, 4)
   torsions_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([tf.expand_dims(x[0], axis = 2), tf.expand_dims(x[1], axis = 2), tf.expand_dims(x[2], axis = 2), x[3]], axis = 2))([pre_omega_atom_pos, phi_atom_pos, psi_atom_pos, chis_atom_pos]); # torsions_atom_pos.shape = (N_template, N_res, 7, 4, 3)
   torsions_angles_mask = tf.keras.layers.Lambda(lambda x: tf.concat([tf.expand_dims(x[0], axis = 2), tf.expand_dims(x[1], axis = 2), tf.expand_dims(x[2], axis = 2), x[3]], axis = 2))([pre_omega_mask, phi_mask, psi_mask, chis_mask]); # torsions_angles_mask.shape = (N_template, N_res, 7)
-  point1, point2, point3 = tf.keras.layers.Lambda(lambda x: x[:,:,:,1,:], x[:,:,:,2,:], x[:,:,:,0,:])(torsions_atom_pos); # pointx.shape = (N_template, N_res, 7, 3)
+  point1, point2, point3 = tf.keras.layers.Lambda(lambda x: (x[:,:,:,1,:], x[:,:,:,2,:], x[:,:,:,0,:]))(torsions_atom_pos); # pointx.shape = (N_template, N_res, 7, 3)
   torsion_frames_rotation, torsion_frames_translation = rigids_from_3_points()([point1, point2, point3]); # torsion_frames_rotation.shape = (N_template, N_res, 7, 3, 3), torsion_frames_translation.shape = (N_template, N_res, 7, 3)
   inv_torsion_frames_rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,1,2,4,3)))(torsion_frames_rotation); # inv_torsion_frames_rotation.shape = (N_template, N_res, 7, 3, 3)
   inv_torsion_frames_translation = tf.keras.layers.Lambda(lambda x: -tf.squeeze(tf.linalg.matmul(x[0],tf.expand_dims(x[1], axis = -1)), axis = -1))([inv_torsion_frames_rotation, torsion_frames_translation]); # inv_torsion_frames_translation.shape = (N_template, N_res, 7, 3)
@@ -1140,6 +1140,13 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
 
 if __name__ == "__main__":
   import numpy as np;
+  aatype = np.random.randint(0,21,size = (4,8));
+  all_atom_pos = np.random.normal(size = (4,8,37,3));
+  all_atom_mask = np.random.normal(size = (4, 8, 37));
+  torsion_angles_sin_cos, alt_torsion_angles_sin_cos, torsions_angles_mask = atom37_to_torsion_angles()([aatype, all_atom_pos, all_atom_mask]);
+  print(torsion_angles_sin_cos.shape, alt_torsion_angles_sin_cos.shape, torsions_angles_mask.shape);
+  
+  exit();
   target_feat = np.random.normal(size = (4, 15, 22));
   msa_feat = np.random.normal(size = (4, 10, 15, 25));
   msa_mask = np.random.normal(size = (4, 10, 15));
