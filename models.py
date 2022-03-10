@@ -1202,42 +1202,31 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
 
 if __name__ == "__main__":
   import numpy as np;
-  target_feat = np.random.normal(size = (4, 15, 22));
-  msa_feat = np.random.normal(size = (4, 10, 15, 25));
-  msa_mask = np.random.normal(size = (4, 10, 15));
-  seq_mask = np.random.normal(size = (4, 15));
-  aatype = np.random.randint(0, 21, size = (4, 15,));
-  reside_index = np.random.randint(0, 10, size = (4, 15));
-  extra_msa = np.random.randint(0, 10, size = (4, 10, 15));
-  extra_msa_mask = np.random.normal(size = (4, 10, 15));
-  extra_has_deletion = np.random.normal(size = (4, 10, 15));
-  extra_deletion_value = np.random.normal(size = (4, 10, 15));
-  atom14_atom_exists = np.random.normal(size = (4, 15,14));
-  residx_atom37_to_atom14 = np.random.randint(0, 14, size = (4,15, atom_type_num));
-  atom37_atom_exists = np.random.normal(size = (4,15, atom_type_num));
+  target_feat = np.random.normal(size = (4, 15, 22)).astype(np.float32);
+  msa_feat = np.random.normal(size = (4, 10, 15, 25)).astype(np.float32);
+  msa_mask = np.random.normal(size = (4, 10, 15)).astype(np.float32);
+  seq_mask = np.random.normal(size = (4, 15)).astype(np.float32);
+  aatype = np.random.randint(0, 21, size = (4, 15,)).astype(np.int32);
+  reside_index = np.random.randint(0, 10, size = (4, 15)).astype(np.int32);
+  extra_msa = np.random.randint(0, 10, size = (4, 10, 15)).astype(np.int32);
+  extra_msa_mask = np.random.normal(size = (4, 10, 15)).astype(np.float32);
+  extra_has_deletion = np.random.normal(size = (4, 10, 15)).astype(np.float32);
+  extra_deletion_value = np.random.normal(size = (4, 10, 15)).astype(np.float32);
+  atom14_atom_exists = np.random.normal(size = (4, 15,14)).astype(np.float32);
+  residx_atom37_to_atom14 = np.random.randint(0, 14, size = (4,15, atom_type_num)).astype(np.int32);
+  atom37_atom_exists = np.random.normal(size = (4,15, atom_type_num)).astype(np.float32);
   batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
                                        extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
                                        atom37_atom_exists];
 
-  template_aatype = np.random.randint(0, 21, size = (4, 4, 15));
-  template_all_atom_positions = np.random.normal(size = (4, 4, 15, atom_type_num, 3));
-  template_all_atom_masks = np.random.normal(size = (4, 4, 15, atom_type_num));
-  template_pseudo_beta_mask = np.random.normal(size = (4, 4, 15));
-  template_pseudo_beta = np.random.normal(size = (4,4,15,3));
-  template_mask = np.random.normal(size = (4,4));
+  template_aatype = np.random.randint(0, 21, size = (4, 4, 15)).astype(np.int32);
+  template_all_atom_positions = np.random.normal(size = (4, 4, 15, atom_type_num, 3)).astype(np.float32);
+  template_all_atom_masks = np.random.normal(size = (4, 4, 15, atom_type_num)).astype(np.float32);
+  template_pseudo_beta_mask = np.random.normal(size = (4, 4, 15)).astype(np.float32);
+  template_pseudo_beta = np.random.normal(size = (4,4,15,3)).astype(np.float32);
+  template_mask = np.random.normal(size = (4,4)).astype(np.float32);
   batched_template_inputs = [template_aatype, template_all_atom_positions, template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta, template_mask];
   
-  prev_pos = np.random.normal(size = (15, atom_type_num, 3));
-  prev_msa_first_row = np.random.normal(size = (15, 256));
-  prev_pair = np.random.normal(size = (15, 15, 128));
-  prev_inputs = [prev_pos, prev_msa_first_row, prev_pair];
-  """
-  alphafolditeration = AlphaFoldIteration(num_ensemble = 4, template_enabled = True);
-  alphafolditeration.save('alphafolditeration.h5');
-  results = alphafolditeration(batched_inputs + batched_template_inputs + prev_inputs);
-  print([result.shape for result in results]);
-  exit();
-  """
   alphafold = AlphaFold(batch_size = 4, template_enabled = True);
   alphafold.save('alphafold.h5');
   results = alphafold(batched_inputs + batched_template_inputs);
