@@ -387,8 +387,17 @@ def atom37_to_torsion_angles(placeholder_for_undefined = False):
   inv_torsion_frames_translation = tf.keras.layers.Lambda(lambda x: -tf.squeeze(tf.linalg.matmul(x[0],tf.expand_dims(x[1], axis = -1)), axis = -1))([inv_torsion_frames_rotation, torsion_frames_translation]); # inv_torsion_frames_translation.shape = (N_template, N_res, 7, 3)
   forth_point = tf.keras.layers.Lambda(lambda x: x[:,:,:,3,:])(torsions_atom_pos); # forth_point.shape = (N_template, N_res, 7, 3)
   forth_atom_rel_pos = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1) + x[1])([inv_torsion_frames_rotation, inv_torsion_frames_translation, forth_point]); # forth_atom_rel_pos.shape = (N_template, N_res, 7, 3)
-  
-  # TODO
+  torsion_angles_sin_cos = tf.keras.layers.Lambda(lambda x: tf.stack([x[:,:,:,2], x[:,:,:,1]], axis = -1))(forth_atom_rel_pos); # torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2)
+  torsion_angles_sin_cos = tf.keras.layers.Lambda(lambda x: x / tf.math.maximum(tf.norm(x, axis = -1, keepdims = True), 1e-8))(torsion_angles_sin_cos); # torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2)
+  torsion_angles_sin_cos = tf.keras.layers.Lambda(lambda x: x * tf.reshape(tf.constant([1., 1., -1., 1., 1., 1., 1.]), (1,1,-1,1)))(torsion_angles_sin_cos); # torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2)
+  chi_is_ambiguous = tf.keras.layers.Lambda(lambda x, c: tf.gather(c, x), arguments = {'c': chi_pi_periodic})(aatype); # chi_is_ambiguous.shape = (N_template, N_res, 4)
+  mirror_torsion_angles = tf.keras.layers.Lambda(lambda x: tf.concat([tf.ones((tf.shape(x)[0],tf.shape(x)[1],3)), 1. - 2. * x], axis = -1))(chi_is_ambiguous); # mirror_torsion_angles.shape = (N_template, N_res, 7)
+  alt_torsion_angles_sin_cos = tf.keras.layers.Lambda(lambda x: x[0] * tf.expand_dims(x[1], axis = -1))([torsion_angles_sin_cos, mirror_torsion_angles]); # alt_torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2)
+  if placeholder_for_undefined:
+    placeholder_torsions = tf.keras.layers.Lambda(lambda x: tf.stack([tf.ones(tf.shape(x)[:-1]), tf.zeros(tf.shape(x)[:-1])], axis = -1))(torsion_angles_sin_cos); # placeholder_torsions.shape = (N_template, N_res, 7, 2)
+    torsion_angles_sin_cos = tf.keras.layers.Lambda(lambda x: x[0] * tf.expand_dims(x[1], axis = -1) + x[2] * (1 - tf.expand_dims(x[1], axis = -1)))([torsion_angles_sin_cos, torsions_angles_mask, placeholder_torsions]); # torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2)
+    alt_torsion_angles_sin_cos = tf.keras.layers.Lambda(lambda x: x[0] * tf.expand_dims(x[1], axis = -1) + x[2] * (1 - tf.expand_dims(x[1], axis = -1)))([alt_torsion_angles_sin_cos, torsions_angles_mask, placeholder_torsions]); # alt_torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2)
+  return tf.keras.Model(inputs = inputs, outputs = (torsion_angles_sin_cos, alt_torsion_angles_sin_cos, torsions_angles_mask));
 
 def frames_and_literature_positions_to_atom14_pos():
   aatype = tf.keras.Input((), dtype = tf.int32); # aatype.shape = (N_res)
