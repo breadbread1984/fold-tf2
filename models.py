@@ -971,9 +971,16 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
     extra_msa_activations, pair_activations = extra_msa_stack_iteration([extra_msa_activations, pair_activations, extra_msa_mask, mask_2d]);
   if template_enabled:
     aatype_one_hot = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 22, axis = -1))(template_aatype); # aatype_one_hot.shape = (N_template, N_res, 22)
-    
-    # TODO: will implement in the future
-    pass;
+    torsion_angles_sin_cos, alt_torsion_angles_sin_cos, torsions_angles_mask = atom37_to_torsion_angles(False)([template_aatype, template_all_atom_positions, template_all_atom_masks]);
+    # torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2), alt_torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2), torsions_angles_mask.shape = (N_template, N_res, 7)
+    template_features = tf.keras.layers.Lambda(lambda x: tf.concat([x[0],
+                                                                    tf.reshape(x[1], (tf.shape(x[1])[0], tf.shape(x[1])[1], 14)),
+                                                                    tf.reshape(x[2], (tf.shape(x[2])[0], tf.shape(x[2])[1], 14)),
+                                                                    x[3]], axis = -1))([aatype_one_hot, torsion_angles_sin_cos, alt_torsion_angles_sin_cos, torsions_angles_mask]); # template_features.shape = (N_template, N_res, 57)
+    template_activations = tf.keras.layers.Dense(msa_channel, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)), bias_initializer = tf.keras.initializers.Constant(0.))(template_features); # template_activations.shape = (N_template, N_res, msa_channel)
+    template_activations = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)), bias_initializer = tf.keras.initializers.Constant(0.))(template_activations); # template_activations.shape = (N_template, N_res, msa_channel)
+    msa_activations = tf.keras.layers.Concatenat(axis = 0)([msa_activations, template_activations]); # msa_activations.shape = (N_seq + N_template, N_res, msa_channel)
+    msa_mask = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], tf.cast(x[1][:,:,2], dtype = x[0].dtype)], axis = 0))([msa_mask, torsions_angles_mask]); # msa_mask.shape = (N_seq + N_template, N_res)
   # Embed MSA features
   evoformer_iteration = EvoformerIteration(msa_channel, pair_channel, is_extra_msa = False)
   for i in range(evoformer_num_block):
@@ -1140,13 +1147,6 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
 
 if __name__ == "__main__":
   import numpy as np;
-  aatype = np.random.randint(0,21,size = (4,8));
-  all_atom_pos = np.random.normal(size = (4,8,37,3));
-  all_atom_mask = np.random.normal(size = (4, 8, 37));
-  torsion_angles_sin_cos, alt_torsion_angles_sin_cos, torsions_angles_mask = atom37_to_torsion_angles()([aatype, all_atom_pos, all_atom_mask]);
-  print(torsion_angles_sin_cos.shape, alt_torsion_angles_sin_cos.shape, torsions_angles_mask.shape);
-  
-  exit();
   target_feat = np.random.normal(size = (4, 15, 22));
   msa_feat = np.random.normal(size = (4, 10, 15, 25));
   msa_mask = np.random.normal(size = (4, 10, 15));
