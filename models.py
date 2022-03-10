@@ -325,6 +325,23 @@ def torsion_angles_to_frames():
   all_frames_to_global_translation = tf.keras.layers.Lambda(lambda x: x[1] + tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1))([backb_to_global_rotation, backb_to_global_translation, all_frames_to_backb_translation]); # # all_frames_to_global_translation.shape = (N_res,8,3)
   return tf.keras.Model(inputs = inputs, outputs = (all_frames_to_global_rotation, all_frames_to_global_translation));
 
+def rigids_from_3_points():
+  point_on_neg_x_axis = tf.keras.Input((None, 7, 3)); # point_on_neg_x_axis.shape = (N_template, N_res, 7, 3)
+  origin = tf.keras.Input((None, 7, 3)); # origin.shape = (N_template, N_res, 7, 3)
+  point_on_xy_plane = tf.keras.Input((None, 7, 3)); # point_on_xy_plane.shape = (N_template, N_res, 7, 3)
+  e0_unnormalized = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([origin, point_on_neg_x_axis]); # e0_unnormalized.shape = (N_template, N_res, 7, 3)
+  e1_unnormalized = tf.keras.layers.Lambda(lambda x: x[0] - x[1])([point_on_xy_plane, origin]); # e1_unnormalized.shape = (N_template, N_res, 7, 3)
+  def vecs_robust_normalize(v):
+    normalized = tf.keras.layers.Lambda(lambda x: x / tf.math.maximum(tf.norm(x, axis = -1, keepdims = True), 1e-8))(v); # normalized.shape = (N_template, N_res, 7, 3)
+    return normalized;
+  e0 = vecs_robust_normalize(e0_unnormalized); # e0.shape = (N_template, N_res, 7, 3)
+  c = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(x[0] * x[1], axis = -1))([e1_unnormalized, e0]); # c.shape = (N_template, N_res, 7)
+  e1 = tf.keras.layers.Lambda(lambda x: x[0] - tf.expand_dims(x[1], axis = -1) * x[2])([e1_unnormalized, c, e0]); # e1.shape = (N_template, N_res, 7, 3)
+  e1 = vecs_robust_normalize(e1); # e1.shape = (N_template, N_res, 7, 3)
+  e2 = tf.keras.layers.Lambda(lambda x: tf.linalg.cross(x[0], x[1]))([e0, e1]); # e2.shape = (N_template, N_res, 7, 3)
+  rotation = tf.keras.layers.Lambda(lambda x: tf.stack(x, axis = -1))([e0, e1, e2]); # rotation.shape = (N_template, N_res, 7, 3, 3)
+  return tf.keras.Model(inputs = (point_on_neg_x_axis, origin, point_on_xy_plane), outputs = rotation);
+
 def atom37_to_torsion_angles(placeholder_for_undefined = False):
   aatype = tf.keras.Input((None,)); # aatype.shape = (N_template, N_res)
   all_atom_pos = tf.keras.Input((None, atom_type_num, 3)); # all_atom_pos.shape = (N_template, N_res, atom_type_num, 3)
