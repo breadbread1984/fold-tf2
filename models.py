@@ -1152,8 +1152,15 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
                                   template_enabled, N_template, template_min_bin, template_max_bin, template_num_bins, use_template_unit_vector,
                                   template_value_dim, template_num_head, num_intermediate_channel, template_num_block, template_rate, template_attn_num_head,
                                   extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel,
-                                  head_masked_msa_output_num, head_distogram_first_break, head_distogram_last_break, head_distogram_num_bins, head_distogram_weight, num_layer, update_affine, dist_epsilon, structure_module_num_channel, drop_rate, num_layer_in_transition, num_head, num_scalar_qk, num_scalar_v,
-                                  num_point_qk, num_point_v, sidechain_num_channel, sidechain_num_residual_block, position_scale, lddt_num_channel, lddt_num_bins, aligned_error_max_bin, aligned_error_num_bins);
+                                  head_masked_msa_output_num,
+                                  head_distogram_first_break, head_distogram_last_break, head_distogram_num_bins, head_distogram_weight,
+                                  num_layer,
+                                  update_affine,
+                                  dist_epsilon, structure_module_num_channel, drop_rate, num_layer_in_transition,
+                                  num_head, num_scalar_qk, num_scalar_v, num_point_qk, num_point_v,
+                                  sidechain_num_channel, sidechain_num_residual_block, position_scale,
+                                  lddt_num_channel, lddt_num_bins,
+                                  aligned_error_max_bin, aligned_error_num_bins);
       if resample_msa_in_recycling:
         def slice_recycle_idx(inputs):
           start = recycle_idx * num_ensemble;
@@ -1176,9 +1183,20 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
     # NOTE: will not use prev_pos, prev_msa_first_row, prev_pair
     recycle_pos = False;
     recycle_features = False;
-    impl = AlphaFoldIteration(num_ensemble, return_representations, c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins, recycle_features, max_relative_feature, template_enabled, extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel,
-                              head_masked_msa_output_num, head_distogram_first_break, head_distogram_last_break, head_distogram_num_bins, head_distogram_weight, num_layer, update_affine, dist_epsilon, structure_module_num_channel, drop_rate, num_layer_in_transition, num_head, num_scalar_qk, num_scalar_v,
-                              num_point_qk, num_point_v, sidechain_num_channel, sidchain_num_residual_block, position_scale, lddt_num_channel, lddt_num_bins, aligned_error_max_bin, aligned_error_num_bins);
+    impl = AlphaFoldIteration(num_ensemble, return_representations, c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins,
+                              recycle_features, max_relative_feature,
+                              template_enabled, N_template, template_min_bin, template_max_bin, template_num_bins, use_template_unit_vector,
+                              template_value_dim, template_num_head, num_intermediate_channel, template_num_block, template_rate, template_attn_num_head,
+                              extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel,
+                              head_masked_msa_output_num,
+                              head_distogram_first_break, head_distogram_last_break, head_distogram_num_bins, head_distogram_weight,
+                              num_layer,
+                              update_affine,
+                              dist_epsilon, structure_module_num_channel, drop_rate, num_layer_in_transition,
+                              num_head, num_scalar_qk, num_scalar_v, num_point_qk, num_point_v,
+                              sidechain_num_channel, sidechain_num_residual_block, position_scale,
+                              lddt_num_channel, lddt_num_bins,
+                              aligned_error_max_bin, aligned_error_num_bins);
   outputs = impl(ensemble + [prev_pos, prev_msa_first_row, prev_pair]);
   return tf.keras.Model(inputs = inputs, outputs = outputs);
 
