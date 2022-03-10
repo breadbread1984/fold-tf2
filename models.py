@@ -1112,9 +1112,17 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
   atom14_atom_exists = tf.keras.Input((None, 14), batch_size = batch_size); # atom14_atom_exists.shape = (batch, N_res, 14)
   residx_atom37_to_atom14 = tf.keras.Input((None, atom_type_num), dtype = tf.int32, batch_size = batch_size); # residx_atom37_to_atom14.shape = (batch, N_res, 37)
   atom37_atom_exists = tf.keras.Input((None, atom_type_num), batch_size = batch_size); # atom37_atom_exists.shape = (batch, N_res, 37)
-
-  inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, \
+  batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, \
             atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists];
+  if template_enabled:
+    template_aatype = tf.keras.Input((None, None,), dtype = tf.int32, batch_size = batch_size); # template_aatype.shape = (num_ensemble, N_template, N_res)
+    template_all_atom_positions = tf.keras.Input((None, None, atom_type_num, 3), batch_size = batch_size); # template_all_atom_positions.shape = (num_ensemble, N_template, N_res, N_atom_type_num, 3)
+    template_all_atom_masks = tf.keras.Input((None, None, atom_type_num), batch_size = batch_size); # template_all_atom_masks.shape = (num_ensemble, N_template, N_res, atom_type_num)
+    template_pseudo_beta_mask = tf.keras.Input((None, None,), batch_size = batch_size); # template_pseudo_beta_mask.shape = (num_ensemble, N_template, N_res)
+    template_pseudo_beta = tf.keras.Input((None, None, 3), batch_size = batch_size); # template_pseudo_beta.shap = (num_ensemble, N_template, N_res, 3)
+    template_mask = tf.keras.Input((), batch_size = batch_size); # template_mask.shape = (num_ensemble, N_template)
+    batched_template_inputs = [template_aatype, template_all_atom_positions, template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta, template_mask];
+  inputs = batched_inputs + (batched_template_inputs if template_enabled else []);
 
   prev_pos = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[1], n, 3)), arguments = {'n': atom_type_num})(target_feat); # prev_pos.shape = (N_res, atom_type_num, 3)
   prev_msa_first_row = tf.keras.layers.Lambda(lambda x, n: tf.zeros((tf.shape(x)[1], n)), arguments = {'n': msa_channel})(target_feat); # prev_msa_first_row.shape = (N_res, msa_channel)
@@ -1173,18 +1181,19 @@ if __name__ == "__main__":
   atom14_atom_exists = np.random.normal(size = (4, 15,14));
   residx_atom37_to_atom14 = np.random.randint(0, 14, size = (4,15, 37));
   atom37_atom_exists = np.random.normal(size = (4,15,37));
-  prev_pos = np.random.normal(size = (15,37,3));
-  prev_msa_first_row = np.random.normal(size = (15, 256));
-  prev_pair = np.random.normal(size = (15,15,128));
-  '''
-  results = AlphaFoldIteration(num_ensemble = 4)([target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
-                                                  extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
-                                                  atom37_atom_exists, prev_pos, prev_msa_first_row, prev_pair]);
-  print([result.shape for result in results]);
-  '''
-  alphafold = AlphaFold(batch_size = 4);
-  alphafold.save('alphafold.h5');
-  results = alphafold([target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
+  batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
                                        extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
-                                       atom37_atom_exists]);
+                                       atom37_atom_exists];
+
+  template_aatype = np.random.randint(0, 21, size = (4, 4, 15));
+  template_all_atom_positions = np.random.normal(size = (4, 4, 15, atom_type_num, 3));
+  template_all_atom_masks = np.random.normal(size = (4, 4, 15, atom_type_num));
+  template_pseudo_beta_mask = np.random.normal(size = (4, 4, 15));
+  template_pseudo_beta = np.random.normal(size = (4,4,15,3));
+  template_mask = np.random.normal(size = (4,4));
+  batched_template_inputs = [template_aatype, template_all_atom_positions, template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta, template_mask];
+
+  alphafold = AlphaFold(batch_size = 4, template_enabled = True);
+  alphafold.save('alphafold.h5');
+  results = alphafold(batched_inputs + batched_template_inputs);
   print([result.shape for result in results]);
