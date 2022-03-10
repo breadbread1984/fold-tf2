@@ -383,6 +383,10 @@ def atom37_to_torsion_angles(placeholder_for_undefined = False):
   torsions_angles_mask = tf.keras.layers.Lambda(lambda x: tf.concat([tf.expand_dims(x[0], axis = 2), tf.expand_dims(x[1], axis = 2), tf.expand_dims(x[2], axis = 2), x[3]], axis = 2))([pre_omega_mask, phi_mask, psi_mask, chis_mask]); # torsions_angles_mask.shape = (N_template, N_res, 7)
   point1, point2, point3 = tf.keras.layers.Lambda(lambda x: x[:,:,:,1,:], x[:,:,:,2,:], x[:,:,:,0,:])(torsions_atom_pos); # pointx.shape = (N_template, N_res, 7, 3)
   torsion_frames_rotation, torsion_frames_translation = rigids_from_3_points()([point1, point2, point3]); # torsion_frames_rotation.shape = (N_template, N_res, 7, 3, 3), torsion_frames_translation.shape = (N_template, N_res, 7, 3)
+  inv_torsion_frames_rotation = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (0,1,2,4,3)))(torsion_frames_rotation); # inv_torsion_frames_rotation.shape = (N_template, N_res, 7, 3, 3)
+  inv_torsion_frames_translation = tf.keras.layers.Lambda(lambda x: -tf.squeeze(tf.linalg.matmul(x[0],tf.expand_dims(x[1], axis = -1)), axis = -1))([inv_torsion_frames_rotation, torsion_frames_translation]); # inv_torsion_frames_translation.shape = (N_template, N_res, 7, 3)
+  forth_point = tf.keras.layers.Lambda(lambda x: x[:,:,:,3,:])(torsions_atom_pos); # forth_point.shape = (N_template, N_res, 7, 3)
+  forth_atom_rel_pos = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1) + x[1])([inv_torsion_frames_rotation, inv_torsion_frames_translation, forth_point]); # forth_atom_rel_pos.shape = (N_template, N_res, 7, 3)
   
   # TODO
 
