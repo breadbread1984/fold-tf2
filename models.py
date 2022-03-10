@@ -1183,7 +1183,7 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
     # NOTE: will not use prev_pos, prev_msa_first_row, prev_pair
     recycle_pos = False;
     recycle_features = False;
-    impl = AlphaFoldIteration(num_ensemble, return_representations, c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins,
+    impl = AlphaFoldIteration(batch_size, return_representations, c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins,
                               recycle_features, max_relative_feature,
                               template_enabled, N_template, template_min_bin, template_max_bin, template_num_bins, use_template_unit_vector,
                               template_value_dim, template_num_head, num_intermediate_channel, template_num_block, template_rate, template_attn_num_head,
