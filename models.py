@@ -996,7 +996,11 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   msa = tf.keras.layers.Lambda(lambda x: x[0][:tf.shape(x[1])[0],:,:])([msa_activations, msa_feat]); # msa.shape = (N_seq, N_res, msa_channel)
   return tf.keras.Model(inputs = inputs, outputs = (single_activations, pair_activations, msa, single_msa_activations));
 
-def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, N_template = 4, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
+def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15,
+                       recycle_features = True, max_relative_feature = 32,
+                       template_enabled = False, N_template = 4, template_min_bin = 3.25, template_max_bin = 50.75, template_num_bins = 39, use_template_unit_vector = False,
+                       template_value_dim = 64, template_num_head = 4, num_intermediate_channel = 64, template_num_block = 2, template_rate = 0.25, template_attn_num_head = 4,
+                       extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
                        head_masked_msa_output_num = 23,
                        head_distogram_first_break = 2.3125, head_distogram_last_break = 21.6875, head_distogram_num_bins = 64, head_distogram_weight = 0.3,
                        num_layer = 8,
@@ -1039,7 +1043,11 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
   inputs = batched_inputs + (batched_template_inputs if template_enabled else []) + unbatched_inputs;
 
   assert type(num_ensemble) is int and num_ensemble >= 1;
-  embeddings_and_evoformer = EmbeddingsAndEvoformer(c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins, recycle_features, max_relative_feature, template_enabled, extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel);
+  embeddings_and_evoformer = EmbeddingsAndEvoformer(c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins,
+                                                    recycle_features, max_relative_feature,
+                                                    template_enabled, N_template, template_min_bin, template_max_bin, template_num_bins, use_template_unit_vector,
+                                                    template_value_dim, template_num_head, num_intermediate_channel, template_num_block, template_rate, template_attn_num_head,
+                                                    extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel);
   # 1) iteration on ensemble batch
   # iteration 0
   def slice_batch(inputs, n):
@@ -1048,15 +1056,15 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
       output = tf.keras.layers.Lambda(lambda x, i: x[i], arguments = {'i': n})(_input);
       outputs.append(output);
     return outputs;
-  batch0_inputs = slice_batch(batched_inputs + (batched_template_inputs if template_enabled else []), 0);
-  single, pair, msa, msa_first_row = embeddings_and_evoformer(batch0_inputs[:10] + (batch0_inputs[13:] if template_enabled else []) + unbatched_inputs);
+  batch0_inputs = slice_batch(batched_inputs[:10] + (batched_template_inputs if template_enabled else []), 0);
+  single, pair, msa, msa_first_row = embeddings_and_evoformer(batch0_inputs + unbatched_inputs);
   representation_update = single, pair, msa, msa_first_row;
   if num_ensemble > 1:
     # iteration 1 to num_ensemble
     for i in range(1, num_ensemble):
       representation_current = representation_update;
-      batchi_inputs = slice_batch(batched_inputs + (batched_template_inputs if template_enabled else []), i);
-      representation = embeddings_and_evoformer(batchi_inputs[:10] + (batchi_inputs[13:] if template_enabled else []) + unbatched_inputs);
+      batchi_inputs = slice_batch(batched_inputs[:10] + (batched_template_inputs if template_enabled else []), i);
+      representation = embeddings_and_evoformer(batchi_inputs + unbatched_inputs);
       representation_update = list();
       for current, update in zip(representation_current, representation):
         rep = tf.keras.layers.Add()([current, update]);
@@ -1168,6 +1176,7 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
 
 if __name__ == "__main__":
   import numpy as np;
+  '''
   target_feat = np.random.normal(size = (15, 22));
   msa_feat = np.random.normal(size = (10, 15, 25));
   msa_mask = np.random.normal(size = (10, 15));
@@ -1194,10 +1203,11 @@ if __name__ == "__main__":
   prev_pair = np.random.normal(size = (15, 15, 128));
   prev_inputs = [prev_pos, prev_msa_first_row, prev_pair];
   
-  results = EmbeddingsAndEvoformer()(batched_inputs + prev_inputs);
+  results = EmbeddingsAndEvoformer(template_enabled = True)(batched_inputs + batched_template_inputs + prev_inputs);
   print([result.shape for result in results]);
   
   exit();
+  '''
   target_feat = np.random.normal(size = (4, 15, 22));
   msa_feat = np.random.normal(size = (4, 10, 15, 25));
   msa_mask = np.random.normal(size = (4, 10, 15));
@@ -1209,8 +1219,8 @@ if __name__ == "__main__":
   extra_has_deletion = np.random.normal(size = (4, 10, 15));
   extra_deletion_value = np.random.normal(size = (4, 10, 15));
   atom14_atom_exists = np.random.normal(size = (4, 15,14));
-  residx_atom37_to_atom14 = np.random.randint(0, 14, size = (4,15, 37));
-  atom37_atom_exists = np.random.normal(size = (4,15,37));
+  residx_atom37_to_atom14 = np.random.randint(0, 14, size = (4,15, atom_type_num));
+  atom37_atom_exists = np.random.normal(size = (4,15, atom_type_num));
   batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
                                        extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
                                        atom37_atom_exists];
