@@ -982,7 +982,7 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
                                                                     x[3]], axis = -1))([aatype_one_hot, torsion_angles_sin_cos, alt_torsion_angles_sin_cos, torsions_angles_mask]); # template_features.shape = (N_template, N_res, 57)
     template_activations = tf.keras.layers.Dense(msa_channel, activation = tf.keras.activations.relu, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)), bias_initializer = tf.keras.initializers.Constant(0.))(template_features); # template_activations.shape = (N_template, N_res, msa_channel)
     template_activations = tf.keras.layers.Dense(msa_channel, kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = np.sqrt(2)), bias_initializer = tf.keras.initializers.Constant(0.))(template_activations); # template_activations.shape = (N_template, N_res, msa_channel)
-    msa_activations = tf.keras.layers.Concatenat(axis = 0)([msa_activations, template_activations]); # msa_activations.shape = (N_seq + N_template, N_res, msa_channel)
+    msa_activations = tf.keras.layers.Concatenate(axis = 0)([msa_activations, template_activations]); # msa_activations.shape = (N_seq + N_template, N_res, msa_channel)
     msa_mask = tf.keras.layers.Lambda(lambda x: tf.concat([x[0], tf.cast(x[1][:,:,2], dtype = x[0].dtype)], axis = 0))([msa_mask, torsions_angles_mask]); # msa_mask.shape = (N_seq + N_template, N_res)
   # Embed MSA features
   evoformer_iteration = EvoformerIteration(msa_channel, pair_channel, is_extra_msa = False)
@@ -1020,8 +1020,8 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
   atom14_atom_exists = tf.keras.Input((None, 14), batch_size = num_ensemble); # atom14_atom_exists.shape = (num_ensemble, N_res, 14)
   residx_atom37_to_atom14 = tf.keras.Input((None, atom_type_num), dtype = tf.int32, batch_size = num_ensemble); # residx_atom37_to_atom14.shape = (num_ensemble, N_res, 37)
   atom37_atom_exists = tf.keras.Input((None, atom_type_num), batch_size = num_ensemble); # atom37_atom_exists.shape = (num_ensemble, N_res, 37)
-  batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, \
-            atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists];
+  batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion,
+                    extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists];
   if template_enabled:
     template_aatype = tf.keras.Input((N_template, None,), dtype = tf.int32, batch_size = num_ensemble); # template_aatype.shape = (num_ensemble, N_template, N_res)
     template_all_atom_positions = tf.keras.Input((N_template, None, atom_type_num, 3), batch_size = num_ensemble); # template_all_atom_positions.shape = (num_ensemble, N_template, N_res, N_atom_type_num, 3)
@@ -1112,8 +1112,8 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
   atom14_atom_exists = tf.keras.Input((None, 14), batch_size = batch_size); # atom14_atom_exists.shape = (batch, N_res, 14)
   residx_atom37_to_atom14 = tf.keras.Input((None, atom_type_num), dtype = tf.int32, batch_size = batch_size); # residx_atom37_to_atom14.shape = (batch, N_res, 37)
   atom37_atom_exists = tf.keras.Input((None, atom_type_num), batch_size = batch_size); # atom37_atom_exists.shape = (batch, N_res, 37)
-  batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, \
-            atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists];
+  batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion,
+                    extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists];
   if template_enabled:
     template_aatype = tf.keras.Input((N_template, None,), dtype = tf.int32, batch_size = batch_size); # template_aatype.shape = (num_ensemble, N_template, N_res)
     template_all_atom_positions = tf.keras.Input((N_template, None, atom_type_num, 3), batch_size = batch_size); # template_all_atom_positions.shape = (num_ensemble, N_template, N_res, N_atom_type_num, 3)
@@ -1168,6 +1168,40 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
 
 if __name__ == "__main__":
   import numpy as np;
+  target_feat = np.random.normal(size = (15, 22));
+  msa_feat = np.random.normal(size = (10, 15, 25));
+  msa_mask = np.random.normal(size = (10, 15));
+  seq_mask = np.random.normal(size = (15,));
+  aatype = np.random.randint(0, 21, size = (15,));
+  reside_index = np.random.randint(0, 10, size = (15,));
+  extra_msa = np.random.randint(0, 10, size = (10, 15));
+  extra_msa_mask = np.random.normal(size = (10, 15));
+  extra_has_deletion = np.random.normal(size = (10, 15));
+  extra_deletion_value = np.random.normal(size = (10, 15));
+  atom14_atom_exists = np.random.normal(size = (15,14));
+  residx_atom37_to_atom14 = np.random.randint(0, 14, size = (15, 37));
+  atom37_atom_exists = np.random.normal(size = (15,37));
+  batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
+                                       extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
+                                       atom37_atom_exists];
+
+  template_aatype = np.random.randint(0, 21, size = (4, 15));
+  template_all_atom_positions = np.random.normal(size = (4, 15, atom_type_num, 3));
+  template_all_atom_masks = np.random.normal(size = (4, 15, atom_type_num));
+  template_pseudo_beta_mask = np.random.normal(size = (4, 15));
+  template_pseudo_beta = np.random.normal(size = (4,15,3));
+  template_mask = np.random.normal(size = (4,));
+  batched_template_inputs = [template_aatype, template_all_atom_positions, template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta, template_mask];
+
+  prev_pos = np.random.normal(size = (15, atom_type_num, 3));
+  prev_msa_first_row = np.random.normal(size = (15, 256));
+  prev_pair = np.random.normal(size = (15, 15, 128));
+  prev_inputs = [prev_pos, prev_msa_first_row, prev_pair];
+  
+  results = EmbeddingsAndEvoformer()(batched_inputs + prev_inputs);
+  print([result.shape for result in results]);
+  
+  exit();
   target_feat = np.random.normal(size = (4, 15, 22));
   msa_feat = np.random.normal(size = (4, 10, 15, 25));
   msa_mask = np.random.normal(size = (4, 10, 15));
