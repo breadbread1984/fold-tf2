@@ -373,10 +373,10 @@ def atom37_to_torsion_angles(placeholder_for_undefined = False):
     chi_atom_indices.append([[0,0,0,0]] * 4);
     return np.array(chi_atom_indices).astype(np.int32);
   # NOTE: chi_atom_indices.shape = (restypes, 4, 4)
-  atom_indices = tf.keras.layers.Lambda(lambda x, idx: tf.gather(idx, x), arguments = {'idx': get_chi_atom_indices()})(aatype); # atom_indices.shape = (N_template, N_res, 4, 4)
-  chis_atom_pos = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], x[1], axis = -2, batch_dims = 2))([all_atom_pos, atom_indices]); # chis_atom_pos.shape = (N_template, N_res, 4,4,3)
-  chis_mask = tf.keras.layers.Lambda(lambda x, m: tf.gather(m, x), arguments = {'m': np.concatenate([chi_angles_mask, np.expand_dims([0.0, 0.0, 0.0, 0.0], axis = 0)], axis = 0)})(aatype); # chis_mask.shape = (N_template, N_res, 4)
-  chi_angle_atoms_mask = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], x[1], axis = -1, batch_dims = 2))([all_atom_mask, atom_indices]); # chi_angle_atoms_mask.shape = (N_template, N_res, 4, 4)
+  atom_indices = tf.keras.layers.Lambda(lambda x, idx: tf.gather(idx, tf.cast(x, dtype = tf.int32)), arguments = {'idx': get_chi_atom_indices()})(aatype); # atom_indices.shape = (N_template, N_res, 4, 4)
+  chis_atom_pos = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], tf.cast(x[1], dtype = tf.int32), axis = -2, batch_dims = 2))([all_atom_pos, atom_indices]); # chis_atom_pos.shape = (N_template, N_res, 4,4,3)
+  chis_mask = tf.keras.layers.Lambda(lambda x, m: tf.gather(m, tf.cast(x, dtype = tf.int32)), arguments = {'m': np.concatenate([chi_angles_mask, np.expand_dims([0.0, 0.0, 0.0, 0.0], axis = 0)], axis = 0)})(aatype); # chis_mask.shape = (N_template, N_res, 4)
+  chi_angle_atoms_mask = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], tf.cast(x[1], dtype = tf.int32), axis = -1, batch_dims = 2))([all_atom_mask, atom_indices]); # chi_angle_atoms_mask.shape = (N_template, N_res, 4, 4)
   chi_angle_atoms_mask = tf.keras.layers.Lambda(lambda x: tf.math.reduce_prod(x, axis = -1))(chi_angle_atoms_mask); # chi_angle_atoms_mask.shape = (N_template, N_res, 4)
   chis_mask = tf.keras.layers.Lambda(lambda x: tf.cast(x[0], dtype = tf.float32) * tf.cast(x[1], dtype = tf.float32))([chis_mask, chi_angle_atoms_mask]); # chis_mask.shape = (N_template, N_res, 4)
   torsions_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([tf.expand_dims(x[0], axis = 2), tf.expand_dims(x[1], axis = 2), tf.expand_dims(x[2], axis = 2), x[3]], axis = 2))([pre_omega_atom_pos, phi_atom_pos, psi_atom_pos, chis_atom_pos]); # torsions_atom_pos.shape = (N_template, N_res, 7, 4, 3)
@@ -390,7 +390,7 @@ def atom37_to_torsion_angles(placeholder_for_undefined = False):
   torsion_angles_sin_cos = tf.keras.layers.Lambda(lambda x: tf.stack([x[:,:,:,2], x[:,:,:,1]], axis = -1))(forth_atom_rel_pos); # torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2)
   torsion_angles_sin_cos = tf.keras.layers.Lambda(lambda x: x / tf.math.maximum(tf.norm(x, axis = -1, keepdims = True), 1e-8))(torsion_angles_sin_cos); # torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2)
   torsion_angles_sin_cos = tf.keras.layers.Lambda(lambda x: x * tf.reshape(tf.constant([1., 1., -1., 1., 1., 1., 1.]), (1,1,-1,1)))(torsion_angles_sin_cos); # torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2)
-  chi_is_ambiguous = tf.keras.layers.Lambda(lambda x, c: tf.gather(c, x), arguments = {'c': chi_pi_periodic})(aatype); # chi_is_ambiguous.shape = (N_template, N_res, 4)
+  chi_is_ambiguous = tf.keras.layers.Lambda(lambda x, c: tf.gather(c, tf.cast(x, dtype = tf.int32)), arguments = {'c': chi_pi_periodic})(aatype); # chi_is_ambiguous.shape = (N_template, N_res, 4)
   mirror_torsion_angles = tf.keras.layers.Lambda(lambda x: tf.concat([tf.ones((tf.shape(x)[0],tf.shape(x)[1],3)), 1. - 2. * x], axis = -1))(chi_is_ambiguous); # mirror_torsion_angles.shape = (N_template, N_res, 7)
   alt_torsion_angles_sin_cos = tf.keras.layers.Lambda(lambda x: x[0] * tf.expand_dims(x[1], axis = -1))([torsion_angles_sin_cos, mirror_torsion_angles]); # alt_torsion_angles_sin_cos.shape = (N_template, N_res, 7, 2)
   if placeholder_for_undefined:
@@ -413,7 +413,7 @@ def frames_and_literature_positions_to_atom14_pos():
   lit_positions = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, tf.cast(x, dtype = tf.int32)), arguments = {'p': restype_atom14_rigid_group_positions})(aatype); # x.shape = (N_res, 14, 3)
   pred_positions = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1) + x[1])([map_atoms_to_global_rotation, map_atoms_to_global_translation, lit_positions]); # pred_positions.shape = (N_res, 14, 3)
   # restype_atom14_mask.shape = (21, 14)
-  mask = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_atom14_mask})(aatype); # mask.shape = (N_res, 14)
+  mask = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, tf.cast(x, dtype = tf.int32)), arguments = {'p': restype_atom14_mask})(aatype); # mask.shape = (N_res, 14)
   pred_positions = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0], axis = -1) * x[1])([mask, pred_positions]); # pred_positions.shape = (N_res, 14, 3)
   return tf.keras.Model(inputs = inputs, outputs = pred_positions);
 
@@ -532,7 +532,7 @@ def StructureModule(seq_channel = 384, num_layer = 8,
   final_atom14_positions = tf.keras.layers.Lambda(lambda x: x[-1])(position); # atom14_pred_positions.shape = (N_res, 14, 3)
   final_atom14_mask = atom14_atom_exists; # final_atom14_mask.shape = (N_res, 14)
   # atom14_to_atom37
-  atom37_pred_positions = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], x[1], batch_dims = 1))([final_atom14_positions, residx_atom37_to_atom14]); # atom37_pred_positions.shape = (N_res, atom_type_num, 3)
+  atom37_pred_positions = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], tf.cast(x[1], dtype = tf.int32), batch_dims = 1))([final_atom14_positions, residx_atom37_to_atom14]); # atom37_pred_positions.shape = (N_res, atom_type_num, 3)
   atom37_pred_positions = tf.keras.layers.Lambda(lambda x: x[0] * tf.expand_dims(x[1], axis = -1))([atom37_pred_positions, atom37_atom_exists]); # atom37_pred_positions.shape = (N_res, atom_type_num, 3)
   final_atom_positions = atom37_pred_positions;
   final_atom_mask = atom37_atom_exists;
