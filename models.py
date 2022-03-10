@@ -996,7 +996,7 @@ def EmbeddingsAndEvoformer(c_m = 22, c_z = 25, msa_channel = 256, pair_channel =
   msa = tf.keras.layers.Lambda(lambda x: x[0][:tf.shape(x[1])[0],:,:])([msa_activations, msa_feat]); # msa.shape = (N_seq, N_res, msa_channel)
   return tf.keras.Model(inputs = inputs, outputs = (single_activations, pair_activations, msa, single_msa_activations));
 
-def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
+def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, N_template = 4, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
                        head_masked_msa_output_num = 23,
                        head_distogram_first_break = 2.3125, head_distogram_last_break = 21.6875, head_distogram_num_bins = 64, head_distogram_weight = 0.3,
                        num_layer = 8,
@@ -1023,12 +1023,12 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
   batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, \
             atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists];
   if template_enabled:
-    template_aatype = tf.keras.Input((None, None,), dtype = tf.int32, batch_size = N_template); # template_aatype.shape = (num_ensemble, N_template, N_res)
-    template_all_atom_positions = tf.keras.Input((None, None, atom_type_num, 3), batch_size = N_template); # template_all_atom_positions.shape = (num_ensemble, N_template, N_res, N_atom_type_num, 3)
-    template_all_atom_masks = tf.keras.Input((None, None, atom_type_num), batch_size = N_template); # template_all_atom_masks.shape = (num_ensemble, N_template, N_res, atom_type_num)
-    template_pseudo_beta_mask = tf.keras.Input((None, None,), batch_size = N_template); # template_pseudo_beta_mask.shape = (num_ensemble, N_template, N_res)
-    template_pseudo_beta = tf.keras.Input((None, None, 3), batch_size = N_template); # template_pseudo_beta.shap = (num_ensemble, N_template, N_res, 3)
-    template_mask = tf.keras.Input((), batch_size = N_template); # template_mask.shape = (num_ensemble, N_template)
+    template_aatype = tf.keras.Input((N_template, None,), dtype = tf.int32, batch_size = num_ensemble); # template_aatype.shape = (num_ensemble, N_template, N_res)
+    template_all_atom_positions = tf.keras.Input((N_template, None, atom_type_num, 3), batch_size = num_ensemble); # template_all_atom_positions.shape = (num_ensemble, N_template, N_res, N_atom_type_num, 3)
+    template_all_atom_masks = tf.keras.Input((N_template, None, atom_type_num), batch_size = num_ensemble); # template_all_atom_masks.shape = (num_ensemble, N_template, N_res, atom_type_num)
+    template_pseudo_beta_mask = tf.keras.Input((N_template, None,), batch_size = num_ensemble); # template_pseudo_beta_mask.shape = (num_ensemble, N_template, N_res)
+    template_pseudo_beta = tf.keras.Input((N_template, None, 3), batch_size = num_ensemble); # template_pseudo_beta.shap = (num_ensemble, N_template, N_res, 3)
+    template_mask = tf.keras.Input((N_template,), batch_size = num_ensemble); # template_mask.shape = (num_ensemble, N_template)
     batched_template_inputs = [template_aatype, template_all_atom_positions, template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta, template_mask];
   # non ensembed batch
   prev_pos = tf.keras.Input((atom_type_num, 3), batch_size = num_ensemble); # prev_pos.shape = (N_res, atom_type_num, 3)
@@ -1087,7 +1087,7 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
   aligned_error_logits, aligned_error_breaks = PredictedAlignedErrorHead(pair_channel, aligned_error_num_bins, aligned_error_max_bin)(pair);
   return tf.keras.Model(inputs = inputs, outputs = [msa_first_row, pair, masked_msa, distogram_logits, distogram_breaks,] + list(structure_module_results) + [lddt_logits, aligned_error_logits, aligned_error_breaks]);
 
-def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
+def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, N_template = 4, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
               head_masked_msa_output_num = 23,
               head_distogram_first_break = 2.3125, head_distogram_last_break = 21.6875, head_distogram_num_bins = 64, head_distogram_weight = 0.3,
               num_layer = 8,
@@ -1115,12 +1115,12 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
   batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, \
             atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists];
   if template_enabled:
-    template_aatype = tf.keras.Input((None, None,), dtype = tf.int32, batch_size = batch_size); # template_aatype.shape = (num_ensemble, N_template, N_res)
-    template_all_atom_positions = tf.keras.Input((None, None, atom_type_num, 3), batch_size = batch_size); # template_all_atom_positions.shape = (num_ensemble, N_template, N_res, N_atom_type_num, 3)
-    template_all_atom_masks = tf.keras.Input((None, None, atom_type_num), batch_size = batch_size); # template_all_atom_masks.shape = (num_ensemble, N_template, N_res, atom_type_num)
-    template_pseudo_beta_mask = tf.keras.Input((None, None,), batch_size = batch_size); # template_pseudo_beta_mask.shape = (num_ensemble, N_template, N_res)
-    template_pseudo_beta = tf.keras.Input((None, None, 3), batch_size = batch_size); # template_pseudo_beta.shap = (num_ensemble, N_template, N_res, 3)
-    template_mask = tf.keras.Input((), batch_size = batch_size); # template_mask.shape = (num_ensemble, N_template)
+    template_aatype = tf.keras.Input((N_template, None,), dtype = tf.int32, batch_size = batch_size); # template_aatype.shape = (num_ensemble, N_template, N_res)
+    template_all_atom_positions = tf.keras.Input((N_template, None, atom_type_num, 3), batch_size = batch_size); # template_all_atom_positions.shape = (num_ensemble, N_template, N_res, N_atom_type_num, 3)
+    template_all_atom_masks = tf.keras.Input((N_template, None, atom_type_num), batch_size = batch_size); # template_all_atom_masks.shape = (num_ensemble, N_template, N_res, atom_type_num)
+    template_pseudo_beta_mask = tf.keras.Input((N_template, None,), batch_size = batch_size); # template_pseudo_beta_mask.shape = (num_ensemble, N_template, N_res)
+    template_pseudo_beta = tf.keras.Input((N_template, None, 3), batch_size = batch_size); # template_pseudo_beta.shap = (num_ensemble, N_template, N_res, 3)
+    template_mask = tf.keras.Input((N_template,), batch_size = batch_size); # template_mask.shape = (num_ensemble, N_template)
     batched_template_inputs = [template_aatype, template_all_atom_positions, template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta, template_mask];
   inputs = batched_inputs + (batched_template_inputs if template_enabled else []);
 
