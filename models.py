@@ -2,7 +2,7 @@
 
 import numpy as np;
 import tensorflow as tf;
-from residue_constants import restype_order, atom_order, atom_type_num, restype_rigid_group_default_frame, restype_atom14_to_rigid_group, restype_atom14_rigid_group_positions, restype_atom14_mask;
+from residue_constants import *;
 
 def TemplatePairStack(c_t, num_head = 4, num_intermediate_channel = 64, num_block = 2, rate = 0.25, **kwargs):
   pair_act = tf.keras.Input((None, c_t)); # pair_act.shape = (N_res, N_res, c_t)
@@ -341,7 +341,31 @@ def atom37_to_torsion_angles(placeholder_for_undefined = False):
   psi_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([x[0][:,:,0:3,:], x[1][:,:,4:5,:]], axis = -2))([all_atom_pos, all_atom_pos]); # all_atom_pos.shape = (N_template, N_res, 4, 3)
   pre_omega_mask = tf.keras.layers.Lambda(lambda x: tf.math.reduce_prod(x[0][:,:,1:3], axis = -1) * tf.math.reduce_prod(x[1][:,:,0:2], axis = -1))([prev_all_atom_mask, all_atom_mask]); # pre_omega_mask.shape = (N_template, N_res)
   phi_mask = tf.keras.layers.Lambda(lambda x: x[0][:,:,2] * tf.math.reduce_prod(x[1][:,:,0:3], axis = -1))([prev_all_atom_mask, all_atom_mask]); # phi_mask.shape = (N_template, N_res)
-  psi_mask = tf.keras.layers.Lambda(lambda x: )
+  psi_mask = tf.keras.layers.Lambda(lambda x: tf.math.reduce_prod(x[0][:,:,0:3], axis = -1) * x[1][:,:,4])([all_atom_mask, all_atom_mask]); # psi_mask.shape = (N_template, N_res)
+  def get_chi_atom_indices():
+    chi_atom_indices = [];
+    for residue_name in restypes:
+      residue_name = restype_1to3[residue_name];
+      residue_chi_angles = chi_angles_atoms[residue_name];
+      atom_indices = [];
+      for chi_angle in residue_chi_angles:
+        atom_indices.append([atom_order[atom] for atom in chi_angles]);
+      for _ in range(4 - len(atom_indices)):
+        atom_indices.append([0,0,0,0]);
+      chi_atom_indices.append(atom_indices);
+    chi_atom_indices.append([[0,0,0,0]] * 4);
+    return np.array(chi_atom_indices).astype(np.int32);
+  # NOTE: chi_atom_indices.shape = (restypes, 4, 4)
+  atom_indices = tf.keras.layers.Lambda(lambda x, idx: tf.gather(idx, x), arguments = {'idx': get_chi_atom_indices()})(aatype); # atom_indices.shape = (N_template, N_res, 4, 4)
+  chis_atom_pos = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], x[1], axis = -2, batch_dims = 2))([all_atom_pos, atom_indices]); # chis_atom_pos.shape = (N_template, N_res, 4,4,3)
+  chis_mask = tf.keras.layers.Lambda(lambda x, m: tf.gather(m, x), arguments = {'m': np.concatenate([chi_angles_mask, np.expand_dims([0.0, 0.0, 0.0, 0.0], axis = 0)], axis = 0)})(aatype); # chis_mask.shape = (N_template, N_res, 4)
+  chi_angle_atoms_mask = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], x[1], axis = -1, batch_dims = 2))([all_atom_mask, atom_indices]); # chi_angle_atoms_mask.shape = (N_template, N_res, 4, 4)
+  chi_angle_atoms_mask = tf.keras.layers.Lambda(lambda x: tf.math.reduce_prod(x, axis = -1))(chi_angle_atoms_mask); # chi_angle_atoms_mask.shape = (N_template, N_res, 4)
+  chis_mask = tf.keras.layers.Lambda(lambda x: x[0] * tf.cast(x[1], dtype = tf.float32))([chis_mask, chi_angle_atoms_mask]); # chis_mask.shape = (N_template, N_res, 4)
+  torsions_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([tf.expand_dims(x[0], axis = 2), tf.expand_dims(x[1], axis = 2), tf.expand_dims(x[2], axis = 2), x[3]], axis = 2))([pre_omega_atom_pos, phi_atom_pos, psi_atom_pos, chis_atom_pos]); # torsions_atom_pos.shape = (N_template, N_res, 7, 4, 3)
+  torsions_angles_mask = tf.keras.layers.Lambda(lambda x: tf.concat([tf.expand_dims(x[0], axis = 2), tf.expand_dims(x[1], axis = 2), tf.expand_dims(x[2], axis = 2), x[3]], axis = 2))([pre_omega_mask, phi_mask, psi_mask, chis_mask]); # torsions_angles_mask.shape = (N_template, N_res, 7)
+  
+  # TODO
 
 def frames_and_literature_positions_to_atom14_pos():
   aatype = tf.keras.Input((), dtype = tf.int32); # aatype.shape = (N_res)
