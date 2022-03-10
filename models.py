@@ -1095,7 +1095,11 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
   aligned_error_logits, aligned_error_breaks = PredictedAlignedErrorHead(pair_channel, aligned_error_num_bins, aligned_error_max_bin)(pair);
   return tf.keras.Model(inputs = inputs, outputs = [msa_first_row, pair, masked_msa, distogram_logits, distogram_breaks,] + list(structure_module_results) + [lddt_logits, aligned_error_logits, aligned_error_breaks]);
 
-def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15, recycle_features = True, max_relative_feature = 32, template_enabled = False, N_template = 4, extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
+def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, msa_channel = 256, pair_channel = 128, recycle_pos = True, prev_pos_min_bin = 3.25, prev_pos_max_bin = 20.75, prev_pos_num_bins = 15,
+              recycle_features = True, max_relative_feature = 32,
+              template_enabled = False, N_template = 4, template_min_bin = 3.25, template_max_bin = 50.75, template_num_bins = 39, use_template_unit_vector = False,
+              template_value_dim = 64, template_num_head = 4, num_intermediate_channel = 64, template_num_block = 2, template_rate = 0.25, template_attn_num_head = 4,
+              extra_msa_channel = 64, extra_msa_stack_num_block = 4, evoformer_num_block = 48, seq_channel = 384,
               head_masked_msa_output_num = 23,
               head_distogram_first_break = 2.3125, head_distogram_last_break = 21.6875, head_distogram_num_bins = 64, head_distogram_weight = 0.3,
               num_layer = 8,
@@ -1143,7 +1147,11 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
       else:
         num_ensemble = batch_size;
       if impl is None:
-        impl = AlphaFoldIteration(num_ensemble, return_representations, c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins, recycle_features, max_relative_feature, template_enabled, extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel,
+        impl = AlphaFoldIteration(num_ensemble, return_representations, c_m, c_z, msa_channel, pair_channel, recycle_pos, prev_pos_min_bin, prev_pos_max_bin, prev_pos_num_bins,
+                                  recycle_features, max_relative_feature,
+                                  template_enabled, N_template, template_min_bin, template_max_bin, template_num_bins, use_template_unit_vector,
+                                  template_value_dim, template_num_head, num_intermediate_channel, template_num_block, template_rate, template_attn_num_head,
+                                  extra_msa_channel, extra_msa_stack_num_block, evoformer_num_block, seq_channel,
                                   head_masked_msa_output_num, head_distogram_first_break, head_distogram_last_break, head_distogram_num_bins, head_distogram_weight, num_layer, update_affine, dist_epsilon, structure_module_num_channel, drop_rate, num_layer_in_transition, num_head, num_scalar_qk, num_scalar_v,
                                   num_point_qk, num_point_v, sidechain_num_channel, sidechain_num_residual_block, position_scale, lddt_num_channel, lddt_num_bins, aligned_error_max_bin, aligned_error_num_bins);
       if resample_msa_in_recycling:
