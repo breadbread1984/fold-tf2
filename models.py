@@ -410,7 +410,7 @@ def frames_and_literature_positions_to_atom14_pos():
   map_atoms_to_global_rotation = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.expand_dims(x[0], axis = 1) * tf.reshape(x[1], (-1,14,8,1,1)), axis = 2))([all_frames_to_global_rotation, group_mask]); # map_atoms_to_global_rotation.shape = (N_res, 14, 3, 3)
   map_atoms_to_global_translation = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.expand_dims(x[0], axis = 1) * tf.reshape(x[1], (-1,14,8,1)), axis = 2))([all_frames_to_global_translation, group_mask]); # map_atoms_to_global_translation.shape = (N_res, 14, 3)
   # restype_atom14_rigid_group_positions.shape = (21,14,3)
-  lit_positions = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_atom14_rigid_group_positions})(aatype); # x.shape = (N_res, 14, 3)
+  lit_positions = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, tf.cast(x, dtype = tf.int32)), arguments = {'p': restype_atom14_rigid_group_positions})(aatype); # x.shape = (N_res, 14, 3)
   pred_positions = tf.keras.layers.Lambda(lambda x: tf.squeeze(tf.linalg.matmul(x[0], tf.expand_dims(x[2], axis = -1)), axis = -1) + x[1])([map_atoms_to_global_rotation, map_atoms_to_global_translation, lit_positions]); # pred_positions.shape = (N_res, 14, 3)
   # restype_atom14_mask.shape = (21, 14)
   mask = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_atom14_mask})(aatype); # mask.shape = (N_res, 14)
