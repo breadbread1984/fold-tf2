@@ -1078,8 +1078,8 @@ def AlphaFoldIteration(num_ensemble, return_representations = False, c_m = 22, c
   else:
     single, pair, msa, msa_first_row = representation_update;
   # single.shape = (N_res, seq_channel), pair.shape = (N_seq, N_res, pair_channel), msa.shape = (N_seq, N_res, msa_channel), msa_first_row.shape = (N_res, msa_channel)
-  batch = batch0_inputs;
-  target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists = batch[:13];
+  target_feat, msa_feat, msa_mask, seq_mask, aatype, residue_index, extra_msa, extra_msa_mask, extra_has_deletion, extra_deletion_value = batch0_inputs[:10];
+  atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists = tuple(slice_batch([atom14_atom_exists, residx_atom37_to_atom14, atom37_atom_exists], 0));
   # 2) connect to heads
   masked_msa = MaskedMsaHead(msa_channel, head_masked_msa_output_num)(msa); # masked_msa.shape = (N_seq, N_seq, head_masked_msa_output_num);
   distogram_logits, distogram_breaks = DistogramHead(pair_channel, head_distogram_num_bins, head_distogram_first_break, head_distogram_last_break)(pair); # distogram_logits.shape = (N_res, N_res, head_distogram_num_bins)
