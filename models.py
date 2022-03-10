@@ -1258,7 +1258,18 @@ if __name__ == "__main__":
   template_pseudo_beta = np.random.normal(size = (4,4,15,3));
   template_mask = np.random.normal(size = (4,4));
   batched_template_inputs = [template_aatype, template_all_atom_positions, template_all_atom_masks, template_pseudo_beta_mask, template_pseudo_beta, template_mask];
+  
+  prev_pos = np.random.normal(size = (15, atom_type_num, 3));
+  prev_msa_first_row = np.random.normal(size = (15, 256));
+  prev_pair = np.random.normal(size = (15, 15, 128));
+  prev_inputs = [prev_pos, prev_msa_first_row, prev_pair];
 
+  alphafolditeration = AlphaFoldIteration(num_ensemble = 4, template_enabled = True);
+  alphafolditeration.save('alphafolditeration.h5');
+  results = alphafolditeration(batched_inputs + batched_template_inputs + prev_inputs);
+  print([result.shape for result in results]);
+  exit();
+  
   alphafold = AlphaFold(batch_size = 4, template_enabled = True);
   alphafold.save('alphafold.h5');
   results = alphafold(batched_inputs + batched_template_inputs);
