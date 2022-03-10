@@ -1178,12 +1178,8 @@ if __name__ == "__main__":
   extra_msa_mask = np.random.normal(size = (10, 15));
   extra_has_deletion = np.random.normal(size = (10, 15));
   extra_deletion_value = np.random.normal(size = (10, 15));
-  atom14_atom_exists = np.random.normal(size = (15,14));
-  residx_atom37_to_atom14 = np.random.randint(0, 14, size = (15, 37));
-  atom37_atom_exists = np.random.normal(size = (15,37));
   batched_inputs = [target_feat, msa_feat, msa_mask, seq_mask, aatype, reside_index, extra_msa, extra_msa_mask,
-                                       extra_has_deletion, extra_deletion_value, atom14_atom_exists, residx_atom37_to_atom14,
-                                       atom37_atom_exists];
+                    extra_has_deletion, extra_deletion_value];
 
   template_aatype = np.random.randint(0, 21, size = (4, 15));
   template_all_atom_positions = np.random.normal(size = (4, 15, atom_type_num, 3));
