@@ -289,7 +289,7 @@ def torsion_angles_to_frames():
   torsion_angles_sin_cos = tf.keras.Input((7, 2)); # torsion_angles_sin_cos.shape = (N_res, 7, 2)
   inputs = (aatype, backb_to_global_rotation, backb_to_global_translation, torsion_angles_sin_cos);
   # restype_rigid_group_default_frame.shape = (21,8,4,4)
-  m = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_rigid_group_default_frame})(aatype); # m.shape = (N_res, 8, 4, 4)
+  m = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, tf.cast(x, dtype = tf.int32)), arguments = {'p': restype_rigid_group_default_frame})(aatype); # m.shape = (N_res, 8, 4, 4)
   default_frame_rotation = tf.keras.layers.Lambda(lambda x: x[...,0:3,0:3])(m); # default_frame_rotation.shape = (N_res, 8, 3, 3)
   default_frame_translation = tf.keras.layers.Lambda(lambda x: x[...,0:3,3])(m); # default_frame_translation.shape = (N_res, 8, 3)
   sin_angles = tf.keras.layers.Lambda(lambda x: x[...,0])(torsion_angles_sin_cos); # sin_angles.shape = (N_res, 7)
@@ -378,7 +378,7 @@ def atom37_to_torsion_angles(placeholder_for_undefined = False):
   chis_mask = tf.keras.layers.Lambda(lambda x, m: tf.gather(m, x), arguments = {'m': np.concatenate([chi_angles_mask, np.expand_dims([0.0, 0.0, 0.0, 0.0], axis = 0)], axis = 0)})(aatype); # chis_mask.shape = (N_template, N_res, 4)
   chi_angle_atoms_mask = tf.keras.layers.Lambda(lambda x: tf.gather(x[0], x[1], axis = -1, batch_dims = 2))([all_atom_mask, atom_indices]); # chi_angle_atoms_mask.shape = (N_template, N_res, 4, 4)
   chi_angle_atoms_mask = tf.keras.layers.Lambda(lambda x: tf.math.reduce_prod(x, axis = -1))(chi_angle_atoms_mask); # chi_angle_atoms_mask.shape = (N_template, N_res, 4)
-  chis_mask = tf.keras.layers.Lambda(lambda x: x[0] * tf.cast(x[1], dtype = tf.float32))([chis_mask, chi_angle_atoms_mask]); # chis_mask.shape = (N_template, N_res, 4)
+  chis_mask = tf.keras.layers.Lambda(lambda x: tf.cast(x[0], dtype = tf.float32) * tf.cast(x[1], dtype = tf.float32))([chis_mask, chi_angle_atoms_mask]); # chis_mask.shape = (N_template, N_res, 4)
   torsions_atom_pos = tf.keras.layers.Lambda(lambda x: tf.concat([tf.expand_dims(x[0], axis = 2), tf.expand_dims(x[1], axis = 2), tf.expand_dims(x[2], axis = 2), x[3]], axis = 2))([pre_omega_atom_pos, phi_atom_pos, psi_atom_pos, chis_atom_pos]); # torsions_atom_pos.shape = (N_template, N_res, 7, 4, 3)
   torsions_angles_mask = tf.keras.layers.Lambda(lambda x: tf.concat([tf.expand_dims(x[0], axis = 2), tf.expand_dims(x[1], axis = 2), tf.expand_dims(x[2], axis = 2), x[3]], axis = 2))([pre_omega_mask, phi_mask, psi_mask, chis_mask]); # torsions_angles_mask.shape = (N_template, N_res, 7)
   point1, point2, point3 = tf.keras.layers.Lambda(lambda x: (x[:,:,:,1,:], x[:,:,:,2,:], x[:,:,:,0,:]))(torsions_atom_pos); # pointx.shape = (N_template, N_res, 7, 3)
@@ -405,7 +405,7 @@ def frames_and_literature_positions_to_atom14_pos():
   all_frames_to_global_translation = tf.keras.Input((8,3)); # all_frames_to_global_translation.shape = (N_res, 8, 3)
   inputs = (aatype, all_frames_to_global_rotation, all_frames_to_global_translation);
   # restype_atom14_to_rigid_group.shape = (21,14)
-  residx_to_group_idx = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, x), arguments = {'p': restype_atom14_to_rigid_group})(aatype); # residx_to_group_idx.shape = (N_res, 14)
+  residx_to_group_idx = tf.keras.layers.Lambda(lambda x, p: tf.gather(p, tf.cast(x, dtype = tf.int32)), arguments = {'p': restype_atom14_to_rigid_group})(aatype); # residx_to_group_idx.shape = (N_res, 14)
   group_mask = tf.keras.layers.Lambda(lambda x: tf.one_hot(x, 8))(residx_to_group_idx); # group_mask.shape = (N_res, 14, 8)
   map_atoms_to_global_rotation = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.expand_dims(x[0], axis = 1) * tf.reshape(x[1], (-1,14,8,1,1)), axis = 2))([all_frames_to_global_rotation, group_mask]); # map_atoms_to_global_rotation.shape = (N_res, 14, 3, 3)
   map_atoms_to_global_translation = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(tf.expand_dims(x[0], axis = 1) * tf.reshape(x[1], (-1,14,8,1)), axis = 2))([all_frames_to_global_translation, group_mask]); # map_atoms_to_global_translation.shape = (N_res, 14, 3)
