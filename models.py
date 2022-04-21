@@ -1201,6 +1201,15 @@ def AlphaFold(batch_size, return_representations = False, c_m = 22, c_z = 25, ms
   return tf.keras.Model(inputs = inputs, outputs = outputs);
 
 if __name__ == "__main__":
+  alphafold = AlphaFold(batch_size = 4, template_enabled = True);
+  tf.keras.models.save_model(alphafold, 'alphafold');
+  import subprocess;
+  proc = subprocess.run(('python3 -m tf2onnx.convert --saved-model alphafold --output alphafold-tf-op13-fp32.onnx --opset 13').split(), capture_output = True);
+  print(proc.returncode);
+  print(proc.stdout.decode('ascii'));
+  print(proc.stderr.decode('ascii'));
+  exit()
+  # NOTE: https://zhuanlan.zhihu.com/p/391147186 says lengths of sequences in PDB datasets are between 50 and 60. therefore, N_res in [50, 60]
   import numpy as np;
   target_feat = np.random.normal(size = (4, 15, 22)).astype(np.float32);
   msa_feat = np.random.normal(size = (4, 10, 15, 25)).astype(np.float32);
